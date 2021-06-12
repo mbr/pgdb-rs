@@ -1,0 +1,12 @@
+[package]
+name = "pgdb_cli"
+version = "0.1.0"
+authors = ["Marc Brinkmann <git@marcbrinkmann.de>"]
+edition = "2018"
+description = "Command-line application to run a Postgres database"
+repository = "https://github.com/mbr/pgdb-rs"
+docs = "https://docs.rs/pgdb_cli"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+pgdb = "0.1.0"
