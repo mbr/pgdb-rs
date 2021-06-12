@@ -7,18 +7,28 @@
 //!
 //! ```
 //! // Run a postgres instance on port `15432`.
-//! let db = pgdb::Postgres::build()
+//! let user = "dev";
+//! let pw = "devpw";
+//! let db = "dev";
+//!
+//! let pg = pgdb::Postgres::build()
 //!     .start()
-//!     .expect("could not start postgres database");
+//!     .expect("could not build postgres database");
 //!
-//! // We can now create a regular user.
-//! db.as_superuser()
-//!     .create_user("test", "pw")
-//!     .expect("could not create normal user");
+//! // We can now create a regular user and a database.
+//! pg.as_superuser()
+//!   .create_user(user, pw)
+//!   .expect("could not create normal user");
 //!
-//! // Runs a query. Note that this is intended for DDL commands, not queries -- use a regular
-//! // postgres library like `sqlx` for that.
-//! db.as_user("test", "pw").run_sql("postgres", "SELECT 1;").expect("failed to run query");
+//! pg.as_superuser()
+//!   .create_database(db, user)
+//!   .expect("could not create normal user's db");
+//!
+//! // Now we can run DDL commands, e.g. creating a table.
+//! let client = pg.as_user(user, pw);
+//! client
+//!     .run_sql(db, "CREATE TABLE foo (id INT PRIMARY KEY);")
+//!     .expect("could not run table creation command");
 //! ```
 
 use std::{
@@ -411,33 +421,4 @@ fn escape_ident(unescaped: &str) -> String {
 /// Escapes a string.
 fn escape_string(unescaped: &str) -> String {
     quote('\'', unescaped)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::Postgres;
-
-    #[test]
-    fn start_and_stop_instance() {
-        let user = "dev";
-        let pw = "devpw";
-        let db = "dev";
-
-        let pgdb = Postgres::build()
-            .start()
-            .expect("could not build postgres database");
-
-        pgdb.as_superuser()
-            .create_user(user, pw)
-            .expect("could not create normal user");
-
-        pgdb.as_superuser()
-            .create_database(db, user)
-            .expect("could not create normal user's db");
-
-        let client = pgdb.as_user(user, pw);
-        client
-            .run_sql(db, "CREATE TABLE foo (id INT PRIMARY KEY);")
-            .expect("could not run table creation command");
-    }
 }
