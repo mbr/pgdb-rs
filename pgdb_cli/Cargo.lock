@@ -142,9 +142,9 @@ dependencies = [
 
 [[package]]
 name = "pgdb"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9e43dd429dd224dca76a7fba799c40fa49e2b671b2aabbeeca5454e6593b56a"
+checksum = "244585ad84a70ff720ab1f9f67e38a1be4fecb9a2d7cca9c1203b03df549c3fa"
 dependencies = [
  "hex_fmt",
  "process_guard",
