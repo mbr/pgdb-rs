@@ -1,3 +1,26 @@
+//! Runs Postgres instances.
+//!
+//! `pgdb` supports configuring and starting a Postgres database instance through a builder pattern,
+//! with shutdown and cleanup on `Drop`.
+//!
+//! # Example
+//!
+//! ```
+//! // Run a postgres instance on port `15432`.
+//! let db = pgdb::Postgres::build()
+//!     .start()
+//!     .expect("could not start postgres database");
+//!
+//! // We can now create a regular user.
+//! db.as_superuser()
+//!     .create_user("test", "pw")
+//!     .expect("could not create normal user");
+//!
+//! // Runs a query. Note that this is intended for DDL commands, not queries -- use a regular
+//! // postgres library like `sqlx` for that.
+//! db.as_user("test", "pw").run_sql("postgres", "SELECT 1;").expect("failed to run query");
+//! ```
+
 use std::{
     fs, io, net, path, process, thread,
     time::{Duration, Instant},
@@ -8,6 +31,9 @@ use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
 
 /// A wrapped postgres instance.
+///
+/// Contains a handle to a running Postgres process. Once dropped, the instance will be shut down
+/// and the temporary directory containing all of its data removed.
 #[derive(Debug)]
 pub struct Postgres {
     /// Host address of the instance.
@@ -377,10 +403,12 @@ fn quote(quote_char: char, unescaped: &str) -> String {
     result
 }
 
+/// Escapes an identifier.
 fn escape_ident(unescaped: &str) -> String {
     quote('"', unescaped)
 }
 
+/// Escapes a string.
 fn escape_string(unescaped: &str) -> String {
     quote('\'', unescaped)
 }
@@ -410,6 +438,6 @@ mod tests {
         let client = pgdb.as_user(user, pw);
         client
             .run_sql(db, "CREATE TABLE foo (id INT PRIMARY KEY);")
-            .expect("could not table creation command");
+            .expect("could not run table creation command");
     }
 }
