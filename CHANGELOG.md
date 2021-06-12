@@ -5,6 +5,7 @@
 ### Added
 
 - CLI tool `pgdb` that allows running Postgres instances from the command line.
+- Can now retrieve `host`, `port` and similar information from `Postgres`/`PostgresClient`.
 
 ### Changed
 

@@ -140,6 +140,7 @@ pub enum Error {
 
 impl Postgres {
     /// Creates a new Postgres database builder.
+    #[inline]
     pub fn build() -> PostgresBuilder {
         PostgresBuilder {
             data_dir: None,
@@ -156,17 +157,31 @@ impl Postgres {
     }
 
     /// Returns a postgres client with superuser credentials.
+    #[inline]
     pub fn as_superuser(&self) -> PostgresClient<'_> {
         self.as_user(&self.superuser, &self.superuser_pw)
     }
 
     /// Returns a postgres client that uses the given credentials.
+    #[inline]
     pub fn as_user(&self, username: &str, password: &str) -> PostgresClient<'_> {
         PostgresClient {
             instance: self,
             username: username.to_string(),
             password: password.to_string(),
         }
+    }
+
+    /// Returns the hostname the Postgres database can be connected to at.
+    #[inline]
+    pub fn host(&self) -> &str {
+        self.host.as_str()
+    }
+
+    /// Returns the port the Postgres database is bound to.
+    #[inline]
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
 
@@ -210,6 +225,7 @@ impl<'a> PostgresClient<'a> {
     /// Creates a new database with the given owner.
     ///
     /// This typically requires superuser credentials, see [`Postgres::as_superuser`].
+    #[inline]
     pub fn create_database(&self, database: &str, owner: &str) -> Result<(), Error> {
         self.run_sql(
             "postgres",
@@ -224,6 +240,7 @@ impl<'a> PostgresClient<'a> {
     /// Creates a new user on the system that is allowed to login.
     ///
     /// This typically requires superuser credentials, see [`Postgres::as_superuser`].
+    #[inline]
     pub fn create_user(&self, username: &str, password: &str) -> Result<(), Error> {
         self.run_sql(
             "postgres",
@@ -233,6 +250,35 @@ impl<'a> PostgresClient<'a> {
                 escape_string(password)
             ),
         )
+    }
+
+    /// Returns the `Postgres` instance associated with this client.
+    #[inline]
+    pub fn instance(&self) -> &Postgres {
+        self.instance
+    }
+
+    /// Returns the username used by this client.
+    pub fn username(&self) -> &str {
+        self.username.as_str()
+    }
+
+    /// Returns a libpq-style connection URI.
+    pub fn uri(&self, database: &str) -> String {
+        format!(
+            "postgres://{}:{}@{}:{}/{}",
+            self.username,
+            self.password,
+            self.instance.host(),
+            self.instance.port(),
+            database
+        )
+    }
+
+    /// Returns the password used by this client.
+    #[inline]
+    pub fn password(&self) -> &str {
+        self.password.as_str()
     }
 }
 
