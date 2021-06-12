@@ -6,11 +6,11 @@
 //! # Example
 //!
 //! ```
-//! // Run a postgres instance on port `15432`.
 //! let user = "dev";
 //! let pw = "devpw";
 //! let db = "dev";
 //!
+//! // Run a postgres instance on port `15432`.
 //! let pg = pgdb::Postgres::build()
 //!     .start()
 //!     .expect("could not build postgres database");
@@ -62,7 +62,9 @@ pub struct Postgres {
     tmp_dir: tempfile::TempDir,
 }
 
-/// A running postgres instance.
+/// A virtual client for a running postgres.
+///
+/// Contains credentials and enough information to connect to its parent instance.
 #[derive(Debug)]
 pub struct PostgresClient<'a> {
     instance: &'a Postgres,
@@ -73,6 +75,8 @@ pub struct PostgresClient<'a> {
 }
 
 /// Builder for a postgres instance.
+///
+/// Usually constructed via [`Postgres::build`].
 #[derive(Debug, Default)]
 pub struct PostgresBuilder {
     /// Data directory.
@@ -204,6 +208,8 @@ impl<'a> PostgresClient<'a> {
     }
 
     /// Creates a new database with the given owner.
+    ///
+    /// This typically requires superuser credentials, see [`Postgres::as_superuser`].
     pub fn create_database(&self, database: &str, owner: &str) -> Result<(), Error> {
         self.run_sql(
             "postgres",
@@ -216,6 +222,8 @@ impl<'a> PostgresClient<'a> {
     }
 
     /// Creates a new user on the system that is allowed to login.
+    ///
+    /// This typically requires superuser credentials, see [`Postgres::as_superuser`].
     pub fn create_user(&self, username: &str, password: &str) -> Result<(), Error> {
         self.run_sql(
             "postgres",
@@ -290,6 +298,9 @@ impl PostgresBuilder {
     }
 
     /// Starts the Postgres server.
+    ///
+    /// Postgres will start using a newly created temporary directory as its data dir. The function
+    /// will only return once a TCP connection to postgres has been made successfully.
     pub fn start(&self) -> Result<Postgres, Error> {
         // If not set, we will use the default port of 15432.
         let port = self.port.unwrap_or(15432);
