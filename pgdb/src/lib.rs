@@ -206,6 +206,22 @@ impl<'a> PostgresClient<'a> {
         cmd
     }
 
+    /// Runs the given SQL commands from an input file via `psql`.
+    pub fn load_sql<P: AsRef<path::Path>>(&self, database: &str, filename: P) -> Result<(), Error> {
+        let status = self
+            .psql(database)
+            .arg("-f")
+            .arg(filename.as_ref())
+            .status()
+            .map_err(Error::RunPsql)?;
+
+        if !status.success() {
+            return Err(Error::PsqlFailed(status));
+        }
+
+        Ok(())
+    }
+
     /// Runs the given SQL command through `psql`.
     pub fn run_sql(&self, database: &str, sql: &str) -> Result<(), Error> {
         let status = self

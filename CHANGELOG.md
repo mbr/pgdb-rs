@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased] 2021-06-14
+
+### Added
+
+- New method `PostgresClient::load_sql`.
+
 ## [0.1.1] - 2021-06-12
 
 ### Added
