@@ -1,6 +1,6 @@
 [package]
 name = "pgdb_cli"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["Marc Brinkmann <git@marcbrinkmann.de>"]
 edition = "2018"
 description = "Command-line application to run a Postgres database"

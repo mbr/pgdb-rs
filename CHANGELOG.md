@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased] 2021-06-14
+## [0.1.2] 2021-06-15
 
 ### Added
 
