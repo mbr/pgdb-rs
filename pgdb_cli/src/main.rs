@@ -17,12 +17,20 @@ struct Opts {
     /// Name of regular user-owned database, defaults to `dev`.
     #[structopt(short, long, default_value = "dev")]
     db: String,
+    /// Password for the superuser ("postgres") account, default is to generate randomly.
+    #[structopt(short = "S", long)]
+    superuser_pw: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
 
-    let pg = pgdb::Postgres::build().start()?;
+    let mut builder = pgdb::Postgres::build();
+    if let Some(superuser_pw) = opts.superuser_pw {
+        builder.superuser_pw(superuser_pw);
+    }
+
+    let pg = builder.start()?;
     pg.as_superuser().create_user(&opts.user, &opts.password)?;
     pg.as_superuser().create_database(&opts.db, &opts.user)?;
 
