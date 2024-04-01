@@ -8,13 +8,13 @@ struct Opts {
     /// Database port to use.
     #[structopt(short, long)]
     port: Option<u16>,
-    /// Username for regular database user, defaults to `dev`.
+    /// Username for regular database user.
     #[structopt(short, long, default_value = "dev")]
     user: String,
-    /// Password for regular database user, defaults to `dev`.
+    /// Password for regular database user.
     #[structopt(short = "P", long, default_value = "dev")]
     password: String,
-    /// Name of regular user-owned database, defaults to `dev`.
+    /// Name of regular user-owned database.
     #[structopt(short, long, default_value = "dev")]
     db: String,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
