@@ -361,6 +361,13 @@ impl PostgresBuilder {
         self
     }
 
+    /// Sets the password for the superuser.
+    #[inline]
+    pub fn superuser_pw<T: Into<String>>(&mut self, superuser_pw: T) -> &mut Self {
+        self.superuser_pw = superuser_pw.into();
+        self
+    }
+
     /// Starts the Postgres server.
     ///
     /// Postgres will start using a newly created temporary directory as its data dir. The function
@@ -496,4 +503,24 @@ fn escape_ident(unescaped: &str) -> String {
 /// Escapes a string.
 fn escape_string(unescaped: &str) -> String {
     quote('\'', unescaped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Postgres;
+
+    #[test]
+    fn can_change_superuser_pw() {
+        let pg = Postgres::build()
+            .superuser_pw("helloworld")
+            .start()
+            .expect("could not build postgres database");
+
+        let su = pg.as_superuser();
+        su.create_user("foo", "bar")
+            .expect("could not create normal user");
+
+        // Command executed successfully, check we used the right password.
+        assert_eq!(su.password, "helloworld");
+    }
 }
