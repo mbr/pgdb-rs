@@ -10,6 +10,10 @@
 
 - `startup_timeout` and `probe_delay` builder method signatures brought in line with the rest, taking a `&mut` receiver.
 
+### Fixed
+
+- The `--port` option now actually changes the port.
+
 ## [0.1.2] 2021-06-15
 
 ### Added

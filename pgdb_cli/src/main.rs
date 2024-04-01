@@ -29,6 +29,9 @@ fn main() -> anyhow::Result<()> {
     if let Some(superuser_pw) = opts.superuser_pw {
         builder.superuser_pw(superuser_pw);
     }
+    if let Some(port) = opts.port {
+        builder.port(port);
+    }
 
     let pg = builder.start()?;
     pg.as_superuser().create_user(&opts.user, &opts.password)?;
