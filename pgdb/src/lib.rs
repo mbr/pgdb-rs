@@ -51,6 +51,7 @@ pub struct Postgres {
     /// Port the instance is running on.
     port: u16,
     /// Instance of the postgres process.
+    #[allow(dead_code)] // Only used for its `Drop` implementation.
     instance: ProcessGuard,
     /// Path to the `psql` binary.
     psql_binary: path::PathBuf,
@@ -59,6 +60,7 @@ pub struct Postgres {
     /// Superuser's password.
     superuser_pw: String,
     /// Directory holding all the temporary data.
+    #[allow(dead_code)] // Only used for its `Drop` implementation.
     tmp_dir: tempfile::TempDir,
 }
 
