@@ -340,7 +340,7 @@ impl PostgresBuilder {
     ///
     /// Between two startup probes, waits this long.
     #[inline]
-    pub fn probe_delay(mut self, probe_delay: Duration) -> Self {
+    pub fn probe_delay(&mut self, probe_delay: Duration) -> &mut Self {
         self.probe_delay = probe_delay;
         self
     }
@@ -354,7 +354,7 @@ impl PostgresBuilder {
 
     /// Sets the maximum time to probe for startup.
     #[inline]
-    pub fn startup_timeout(mut self, startup_timeout: Duration) -> Self {
+    pub fn startup_timeout(&mut self, startup_timeout: Duration) -> &mut Self {
         self.startup_timeout = startup_timeout;
         self
     }
