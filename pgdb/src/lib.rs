@@ -32,13 +32,21 @@
 //! ```
 
 use std::{
-    fs, io, net, path, process, thread,
+    collections::BTreeSet,
+    fs, io, net, path, process,
+    sync::Mutex,
+    thread,
     time::{Duration, Instant},
 };
 
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
+
+/// A counter for how many instances were spawned.
+///
+/// Use to assign unique port numbers.
+static USED_PORTS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
 
 /// A wrapped postgres instance.
 ///
@@ -84,7 +92,7 @@ pub struct PostgresBuilder {
     /// Data directory.
     data_dir: Option<path::PathBuf>,
     /// Listening port.
-    port: Option<u16>,
+    port: u16,
     /// Bind host.
     host: String,
     /// Name of the super user.
@@ -101,6 +109,8 @@ pub struct PostgresBuilder {
     probe_delay: Duration,
     /// Time until giving up waiting for startup.
     startup_timeout: Duration,
+    /// Whether to reuse an already used port.
+    reuse_port: bool,
 }
 
 /// A Postgres server error.
@@ -146,7 +156,7 @@ impl Postgres {
     pub fn build() -> PostgresBuilder {
         PostgresBuilder {
             data_dir: None,
-            port: None,
+            port: 15432,
             host: "127.0.0.1".to_string(),
             superuser: "postgres".to_string(),
             superuser_pw: generate_random_string(),
@@ -155,6 +165,7 @@ impl Postgres {
             psql_binary: None,
             probe_delay: Duration::from_millis(100),
             startup_timeout: Duration::from_secs(10),
+            reuse_port: false,
         }
     }
 
@@ -325,9 +336,13 @@ impl PostgresBuilder {
     }
 
     /// Sets listening port.
+    ///
+    /// Note that by default, ports will not be reused, every subsequently created database in the
+    /// same process will attempt to use a different port number. If this behavior is not desired,
+    /// call `reuse_port()`.
     #[inline]
     pub fn port(&mut self, port: u16) -> &mut Self {
-        self.port = Some(port);
+        self.port = port;
         self
     }
 
@@ -354,6 +369,16 @@ impl PostgresBuilder {
         self
     }
 
+    /// Reuse port when spawning multiple databases.
+    ///
+    /// By default, the builder checks if any given port has been previously used, and if so, tries
+    /// to find the next available adjacent port instead.
+    #[inline]
+    pub fn reuse_port(&mut self) -> &mut Self {
+        self.reuse_port = true;
+        self
+    }
+
     /// Sets the maximum time to probe for startup.
     #[inline]
     pub fn startup_timeout(&mut self, startup_timeout: Duration) -> &mut Self {
@@ -373,8 +398,30 @@ impl PostgresBuilder {
     /// Postgres will start using a newly created temporary directory as its data dir. The function
     /// will only return once a TCP connection to postgres has been made successfully.
     pub fn start(&self) -> Result<Postgres, Error> {
+        const PRIVILEDGED_PORT_RANGE: u16 = 1024;
+
         // If not set, we will use the default port of 15432.
-        let port = self.port.unwrap_or(15432);
+        let mut port = self.port;
+
+        // Take note of whether the user has set a priviledged port.
+        if !self.reuse_port {
+            let priviledged = port < PRIVILEDGED_PORT_RANGE;
+            let mut guard = USED_PORTS.lock().expect("lock poisoned");
+
+            while !guard.insert(port) {
+                port = port.wrapping_add(1);
+
+                // If we overflowed, do not bind to zero, but try next port instead. Skip if in
+                // priviledged range and not priviledged.
+                if port == 0 {
+                    port += if priviledged {
+                        1
+                    } else {
+                        PRIVILEDGED_PORT_RANGE
+                    };
+                }
+            }
+        }
 
         let postgres_binary = self
             .postgres_binary
@@ -522,5 +569,24 @@ mod tests {
 
         // Command executed successfully, check we used the right password.
         assert_eq!(su.password, "helloworld");
+    }
+
+    #[test]
+    fn instances_use_different_port_by_default() {
+        let a = Postgres::build()
+            .start()
+            .expect("could not build postgres database");
+        let b = Postgres::build()
+            .start()
+            .expect("could not build postgres database");
+        let c = Postgres::build()
+            .start()
+            .expect("could not build postgres database");
+
+        // Note: We could test for sequentiality, but that would be racy if other tests are running
+        //       at the same time.
+        assert_ne!(a.port(), b.port());
+        assert_ne!(a.port(), c.port());
+        assert_ne!(b.port(), c.port());
     }
 }

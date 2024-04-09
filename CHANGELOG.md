@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+- Sequential ports will now be assigned if multiple databases are created from one process.
+
 ## [0.2.0]
 
 ### Added
