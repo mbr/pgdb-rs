@@ -1,6 +1,6 @@
 [package]
 name = "pgdb"
-version = "0.2.0"
+version = "0.3.0"
 authors = [ "Marc Brinkmann <git@marcbrinkmann.de>" ]
 edition = "2018"
 description = "Creates and runs Postgres databases through Rust in temporary directories, cleaned up on drop"

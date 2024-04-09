@@ -1,6 +1,6 @@
 [package]
 name = "pgdb_cli"
-version = "0.2.0"
+version = "0.3.0"
 authors = [ "Marc Brinkmann <git@marcbrinkmann.de>" ]
 edition = "2018"
 description = "Command-line application to run a Postgres database"
@@ -9,7 +9,7 @@ documentation = "https://docs.rs/pgdb_cli"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-pgdb = "0.2.0"
+pgdb = "0.3.0"
 structopt = "0.3.21"
 anyhow = "1.0.41"
 
