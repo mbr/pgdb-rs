@@ -1,0 +1,2 @@
+[workspace]
+members = [ "pgdb", "pgdb_cli" ]
