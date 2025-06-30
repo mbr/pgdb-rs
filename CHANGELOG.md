@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - The default port for the library has been changed from 15432 to 25432 to avoid clashing with instances of the CLI app.
+- `PostgresBuilder` no longer derives `Default` to avoid accidentally building nonsensical builders with no root pw.
 
 ## [0.3.0]
 
