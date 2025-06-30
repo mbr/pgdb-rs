@@ -29,7 +29,8 @@ pub struct DbUri {
 }
 
 impl DbUri {
-    fn as_str(&self) -> &str {
+    /// Returns the
+    pub fn as_str(&self) -> &str {
         self.uri.as_str()
     }
 }
