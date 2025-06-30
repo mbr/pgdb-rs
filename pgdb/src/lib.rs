@@ -87,7 +87,7 @@ pub struct PostgresClient<'a> {
 /// Builder for a postgres instance.
 ///
 /// Usually constructed via [`Postgres::build`].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PostgresBuilder {
     /// Data directory.
     data_dir: Option<path::PathBuf>,
