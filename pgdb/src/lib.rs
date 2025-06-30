@@ -398,27 +398,23 @@ impl PostgresBuilder {
     /// Postgres will start using a newly created temporary directory as its data dir. The function
     /// will only return once a TCP connection to postgres has been made successfully.
     pub fn start(&self) -> Result<Postgres, Error> {
-        const PRIVILEDGED_PORT_RANGE: u16 = 1024;
+        const PRIVILEGED_PORT_RANGE: u16 = 1024;
 
         // If not set, we will use the default port of 15432.
         let mut port = self.port;
 
-        // Take note of whether the user has set a priviledged port.
+        // Take note of whether the user has set a privileged port.
         if !self.reuse_port {
-            let priviledged = port < PRIVILEDGED_PORT_RANGE;
+            let privileged = port < PRIVILEGED_PORT_RANGE;
             let mut guard = USED_PORTS.lock().expect("lock poisoned");
 
             while !guard.insert(port) {
                 port = port.wrapping_add(1);
 
                 // If we overflowed, do not bind to zero, but try next port instead. Skip if in
-                // priviledged range and not priviledged.
+                // privileged range and not privileged.
                 if port == 0 {
-                    port += if priviledged {
-                        1
-                    } else {
-                        PRIVILEDGED_PORT_RANGE
-                    };
+                    port += if privileged { 1 } else { PRIVILEGED_PORT_RANGE };
                 }
             }
         }
