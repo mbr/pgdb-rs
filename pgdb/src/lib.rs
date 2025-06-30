@@ -1,40 +1,12 @@
-//! Runs Postgres instances.
-//!
-//! `pgdb` supports configuring and starting a Postgres database instance through a builder pattern,
-//! with shutdown and cleanup on `Drop`.
-//!
-//! # Example
-//!
-//! ```
-//! let user = "dev";
-//! let pw = "devpw";
-//! let db = "dev";
-//!
-//! // Run a postgres instance on port `25432`.
-//! let pg = pgdb::Postgres::build()
-//!     .start()
-//!     .expect("could not build postgres database");
-//!
-//! // We can now create a regular user and a database.
-//! pg.as_superuser()
-//!   .create_user(user, pw)
-//!   .expect("could not create normal user");
-//!
-//! pg.as_superuser()
-//!   .create_database(db, user)
-//!   .expect("could not create normal user's db");
-//!
-//! // Now we can run DDL commands, e.g. creating a table.
-//! let client = pg.as_user(user, pw);
-//! client
-//!     .run_sql(db, "CREATE TABLE foo (id INT PRIMARY KEY);")
-//!     .expect("could not run table creation command");
-//! ```
+#![doc = include_str!("../../README.md")]
 
 use std::{
     collections::BTreeSet,
     fs, io, net, path, process,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, Weak,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -42,6 +14,77 @@ use std::{
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
+
+/// A database URI keeping a database alive.
+///
+/// Contains the output of [`PostgresClient::uri`] and a reference to the database it points to. As
+/// a result, as long as the [`DbUri`] is alive, the database it points to will also be kept
+/// running.
+#[derive(Debug)]
+pub struct DbUri {
+    /// A reference to the running Postgres instance where this URI points.
+    _arc: Arc<Postgres>,
+    /// The actual URI.
+    uri: String,
+}
+
+impl DbUri {
+    fn as_str(&self) -> &str {
+        self.uri.as_str()
+    }
+}
+
+impl AsRef<str> for DbUri {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+/// A convenience function for regular applications.
+///
+/// Some applications just need a clean database instance and can afford to share the underlying
+/// database.
+///
+/// Uses a shared database instance if multiple tests are running at the same time (see [`DbUri`]
+/// for details). The database may be shut down and recreated if the last [`DbUri`] is dropped
+/// during testing, e.g. when parallel tests are not spawned quick enough.
+///
+/// This construction is necessary because `static` variables will not have `Drop` called on them,
+/// without this construction, the spawned Postgres server would not be stopped.
+pub fn db_fixture() -> DbUri {
+    static DB: Mutex<Weak<Postgres>> = Mutex::new(Weak::new());
+
+    static FIXTURE_COUNT: AtomicUsize = AtomicUsize::new(1);
+
+    let pg = {
+        let mut guard = DB.lock().expect("lock poisoned");
+        if let Some(arc) = guard.upgrade() {
+            // We still have an instance we can reuse.
+            arc
+        } else {
+            let arc = Arc::new(
+                Postgres::build()
+                    .start()
+                    .expect("failed to start global postgres DB"),
+            );
+            *guard = Arc::downgrade(&arc);
+            arc
+        }
+    };
+
+    let count = FIXTURE_COUNT.fetch_add(1, Ordering::Relaxed);
+    let db_name = format!("fixture_db_{}", count);
+    let db_user = format!("fixture_user_{}", count);
+    let db_pw = format!("fixture_pass_{}", count);
+    pg.as_superuser()
+        .create_user(&db_user, &db_pw)
+        .expect("failed to create user for fixture DB");
+    pg.as_superuser()
+        .create_database(&db_name, &db_user)
+        .expect("failed to create database for fixture DB");
+    let uri = pg.as_user(&db_user, &db_pw).uri(&db_name);
+    DbUri { _arc: pg, uri }
+}
 
 /// A counter for how many instances were spawned.
 ///
@@ -584,5 +627,21 @@ mod tests {
         assert_ne!(a.port(), b.port());
         assert_ne!(a.port(), c.port());
         assert_ne!(b.port(), c.port());
+    }
+
+    #[test]
+    fn ensure_proper_db_reuse_when_using_fixtures() {
+        let db_uri = crate::db_fixture();
+        assert_eq!(
+            db_uri.as_str(),
+            "postgres://fixture_user_1:fixture_pass_1@127.0.0.1:25432/fixture_db_1"
+        );
+
+        // Calling `db_fixture` multiple times reuses the postgres process, but creates a fresh database instance and role.
+        let db_uri2 = crate::db_fixture();
+        assert_eq!(
+            db_uri2.as_str(),
+            "postgres://fixture_user_2:fixture_pass_2@127.0.0.1:25432/fixture_db_2"
+        );
     }
 }
