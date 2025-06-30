@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased]
+## [0.4.0]
 
 - The library now uses a random, unused port when launching postgres instances. CLI still defaults to `15432`.
 - `PostgresBuilder` no longer derives `Default` to avoid accidentally building nonsensical builders with no root pw.
