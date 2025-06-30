@@ -2,7 +2,9 @@
 
 use std::{
     collections::BTreeSet,
-    fs, io, net, path, process,
+    fs, io, net,
+    net::TcpListener,
+    path, process,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex, Weak,
@@ -85,6 +87,17 @@ pub fn db_fixture() -> DbUri {
         .expect("failed to create database for fixture DB");
     let uri = pg.as_user(&db_user, &db_pw).uri(&db_name);
     DbUri { _arc: pg, uri }
+}
+
+/// Finds an unused port by binding to port 0 and letting the OS assign one.
+///
+/// This function has a race condition, there is no guarantee that the OS won't reassign the port as
+/// soon as it is released again. Sadly this is our only recourse, as Postgres does not allow
+/// passing `0` as the port number.
+pub fn find_unused_port() -> io::Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    Ok(port)
 }
 
 /// A counter for how many instances were spawned.
