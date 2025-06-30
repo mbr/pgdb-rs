@@ -1,2 +1,10 @@
 [workspace]
-members = [ "pgdb", "pgdb_cli" ]
+members = ["pgdb", "pgdb_cli"]
+
+[workspace.package]
+version = "0.3.0"
+authors = ["Marc Brinkmann <git@marcbrinkmann.de>"]
+edition = "2018"
+repository = "https://github.com/mbr/pgdb-rs"
+documentation = "https://docs.rs/pgdb_cli"
+license = "MIT OR Apache-2.0"

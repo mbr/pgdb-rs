@@ -1,12 +1,12 @@
 [package]
 name = "pgdb_cli"
-version = "0.3.0"
-authors = [ "Marc Brinkmann <git@marcbrinkmann.de>" ]
-edition = "2018"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+license = { workspace = true }
 description = "Command-line application to run a Postgres database"
-repository = "https://github.com/mbr/pgdb-rs"
-documentation = "https://docs.rs/pgdb_cli"
-license = "MIT OR Apache-2.0"
 
 [dependencies]
 pgdb = "0.3.0"
