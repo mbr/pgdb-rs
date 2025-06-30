@@ -10,7 +10,7 @@
 //! let pw = "devpw";
 //! let db = "dev";
 //!
-//! // Run a postgres instance on port `15432`.
+//! // Run a postgres instance on port `25432`.
 //! let pg = pgdb::Postgres::build()
 //!     .start()
 //!     .expect("could not build postgres database");
@@ -156,7 +156,7 @@ impl Postgres {
     pub fn build() -> PostgresBuilder {
         PostgresBuilder {
             data_dir: None,
-            port: 15432,
+            port: 25432,
             host: "127.0.0.1".to_string(),
             superuser: "postgres".to_string(),
             superuser_pw: generate_random_string(),

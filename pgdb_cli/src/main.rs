@@ -29,9 +29,10 @@ fn main() -> anyhow::Result<()> {
     if let Some(superuser_pw) = opts.superuser_pw {
         builder.superuser_pw(superuser_pw);
     }
-    if let Some(port) = opts.port {
-        builder.port(port);
-    }
+
+    // Select a default port that does not clash with the default port of `pgdb`, in case it is used
+    // by unit tests.
+    builder.port(opts.port.unwrap_or(15432));
 
     let pg = builder.start()?;
     pg.as_superuser().create_user(&opts.user, &opts.password)?;
