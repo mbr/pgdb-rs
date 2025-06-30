@@ -475,8 +475,8 @@ impl PostgresBuilder {
         postgres_command
             .arg("-D")
             .arg(&data_dir)
-            .arg("-c")
-            .arg(format!("port={}", port))
+            .arg("-p")
+            .arg(port.to_string())
             .arg("-k")
             .arg(tmp_dir.path());
 
