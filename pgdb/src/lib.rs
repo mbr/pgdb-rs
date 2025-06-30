@@ -1,7 +1,6 @@
 #![doc = include_str!("../../README.md")]
 
 use std::{
-    collections::BTreeSet,
     fs, io, net,
     net::TcpListener,
     path, process,
@@ -94,16 +93,11 @@ pub fn db_fixture() -> DbUri {
 /// This function has a race condition, there is no guarantee that the OS won't reassign the port as
 /// soon as it is released again. Sadly this is our only recourse, as Postgres does not allow
 /// passing `0` as the port number.
-pub fn find_unused_port() -> io::Result<u16> {
+fn find_unused_port() -> io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     Ok(port)
 }
-
-/// A counter for how many instances were spawned.
-///
-/// Use to assign unique port numbers.
-static USED_PORTS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
 
 /// A wrapped postgres instance.
 ///
@@ -149,12 +143,14 @@ pub struct PostgresBuilder {
     /// Data directory.
     data_dir: Option<path::PathBuf>,
     /// Listening port.
-    port: u16,
+    ///
+    /// If not set, [`find_unused_port`] will be used to determine the port.
+    port: Option<u16>,
     /// Bind host.
     host: String,
-    /// Name of the super user.
+    /// Name of the superuser.
     superuser: String,
-    /// Password for the super user.
+    /// Password for the superuser.
     superuser_pw: String,
     /// Path to `postgres` binary.
     postgres_binary: Option<path::PathBuf>,
@@ -166,8 +162,6 @@ pub struct PostgresBuilder {
     probe_delay: Duration,
     /// Time until giving up waiting for startup.
     startup_timeout: Duration,
-    /// Whether to reuse an already used port.
-    reuse_port: bool,
 }
 
 /// A Postgres server error.
@@ -213,7 +207,7 @@ impl Postgres {
     pub fn build() -> PostgresBuilder {
         PostgresBuilder {
             data_dir: None,
-            port: 25432,
+            port: None,
             host: "127.0.0.1".to_string(),
             superuser: "postgres".to_string(),
             superuser_pw: generate_random_string(),
@@ -222,7 +216,6 @@ impl Postgres {
             psql_binary: None,
             probe_delay: Duration::from_millis(100),
             startup_timeout: Duration::from_secs(10),
-            reuse_port: false,
         }
     }
 
@@ -394,12 +387,12 @@ impl PostgresBuilder {
 
     /// Sets listening port.
     ///
-    /// Note that by default, ports will not be reused, every subsequently created database in the
-    /// same process will attempt to use a different port number. If this behavior is not desired,
-    /// call `reuse_port()`.
+    /// If no port is set, the builder will attempt to find an unused through binding port `0`. This
+    /// is somewhat racing, but the only recourse, since Postgres does not support binding to port
+    /// `0`.
     #[inline]
     pub fn port(&mut self, port: u16) -> &mut Self {
-        self.port = port;
+        self.port = Some(port);
         self
     }
 
@@ -426,16 +419,6 @@ impl PostgresBuilder {
         self
     }
 
-    /// Reuse port when spawning multiple databases.
-    ///
-    /// By default, the builder checks if any given port has been previously used, and if so, tries
-    /// to find the next available adjacent port instead.
-    #[inline]
-    pub fn reuse_port(&mut self) -> &mut Self {
-        self.reuse_port = true;
-        self
-    }
-
     /// Sets the maximum time to probe for startup.
     #[inline]
     pub fn startup_timeout(&mut self, startup_timeout: Duration) -> &mut Self {
@@ -455,26 +438,11 @@ impl PostgresBuilder {
     /// Postgres will start using a newly created temporary directory as its data dir. The function
     /// will only return once a TCP connection to postgres has been made successfully.
     pub fn start(&self) -> Result<Postgres, Error> {
-        const PRIVILEGED_PORT_RANGE: u16 = 1024;
+        let port = self
+            .port
+            .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"));
 
-        // If not set, we will use the default port of 15432.
-        let mut port = self.port;
-
-        // Take note of whether the user has set a privileged port.
-        if !self.reuse_port {
-            let privileged = port < PRIVILEGED_PORT_RANGE;
-            let mut guard = USED_PORTS.lock().expect("lock poisoned");
-
-            while !guard.insert(port) {
-                port = port.wrapping_add(1);
-
-                // If we overflowed, do not bind to zero, but try next port instead. Skip if in
-                // privileged range and not privileged.
-                if port == 0 {
-                    port += if privileged { 1 } else { PRIVILEGED_PORT_RANGE };
-                }
-            }
-        }
+        eprintln!("Using port {}", port);
 
         let postgres_binary = self
             .postgres_binary
@@ -636,8 +604,6 @@ mod tests {
             .start()
             .expect("could not build postgres database");
 
-        // Note: We could test for sequentiality, but that would be racy if other tests are running
-        //       at the same time.
         assert_ne!(a.port(), b.port());
         assert_ne!(a.port(), c.port());
         assert_ne!(b.port(), c.port());
@@ -647,15 +613,15 @@ mod tests {
     fn ensure_proper_db_reuse_when_using_fixtures() {
         let db_uri = crate::db_fixture();
         assert_eq!(
-            db_uri.as_str(),
-            "postgres://fixture_user_1:fixture_pass_1@127.0.0.1:25432/fixture_db_1"
+            &db_uri.as_str()[..51],
+            "postgres://fixture_user_1:fixture_pass_1@127.0.0.1:"
         );
 
         // Calling `db_fixture` multiple times reuses the postgres process, but creates a fresh database instance and role.
         let db_uri2 = crate::db_fixture();
         assert_eq!(
-            db_uri2.as_str(),
-            "postgres://fixture_user_2:fixture_pass_2@127.0.0.1:25432/fixture_db_2"
+            &db_uri2.as_str()[..51],
+            "postgres://fixture_user_2:fixture_pass_2@127.0.0.1:"
         );
     }
 }

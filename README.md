@@ -10,7 +10,6 @@ convenience function can be used:
 
 ```rust
 let db_uri = pgdb::db_fixture();
-assert_eq!(db_uri.as_str(), "postgres://fixture_user_1:fixture_pass_1@127.0.0.1:25432/fixture_db_1");
 // You can now use `db_uri` in your ORM. The database will not be shut down before `db_uri` is dropped.
 ```
 

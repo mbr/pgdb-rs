@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- The default port for the library has been changed from 15432 to 25432 to avoid clashing with instances of the CLI app.
+- The library now uses a random, unused port when launching postgres instances. CLI still defaults to `15432`.
 - `PostgresBuilder` no longer derives `Default` to avoid accidentally building nonsensical builders with no root pw.
 - Added `db_fixture` function for easier database creation and sharing.
 
