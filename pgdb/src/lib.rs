@@ -442,8 +442,6 @@ impl PostgresBuilder {
             .port
             .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"));
 
-        eprintln!("Using port {}", port);
-
         let postgres_binary = self
             .postgres_binary
             .clone()
@@ -471,7 +469,7 @@ impl PostgresBuilder {
             .map_err(Error::WriteTemporaryPw)?;
 
         let initdb_status = process::Command::new(initdb_binary)
-            .args(&[
+            .args([
                 // No default locale (== 'C').
                 "--no-locale",
                 // Require a password for all users.
