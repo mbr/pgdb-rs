@@ -216,25 +216,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "pgdb"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac0858e655676959ee0fa5d6311e0d4fb4d808f81ee13e20695dfae9df2e9fb7"
-dependencies = [
- "hex_fmt",
- "process_guard",
- "rand",
- "tempfile",
- "thiserror",
- "which",
-]
-
-[[package]]
 name = "pgdb_cli"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "pgdb 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pgdb",
  "structopt",
 ]
 
