@@ -1,12 +1,10 @@
 # pgdb-rs
 
-A small rust crate that allow easy creation and running of temporary Postgres databases, typically used for unit tests
-or similar things.
+A small Rust to create and run ephemeral Postgres databases, typically used as unit test fixtures.
 
 ## Quick start
 
-If a regular postgres database including tools like `initdb` is available on the path at runtime, the default
-convenience function can be used:
+Tests requiring a fresh database (but not cluster) instance can use `db_fixture`:
 
 ```rust
 let db_uri = pgdb::db_fixture();
@@ -14,6 +12,8 @@ let db_uri = pgdb::db_fixture();
 ```
 
 Note that databases are not cleaned up until the testing process exist.
+
+Requires regular Postgres database utilities like `initdb` is available on the path at runtime.
 
 ## Detailed usage
 
