@@ -124,10 +124,8 @@ pub struct Postgres {
 #[derive(Debug)]
 pub struct PostgresClient<'a> {
     instance: &'a Postgres,
-    /// Superuser name.
-    username: String,
-    /// Superuser password.
-    password: String,
+    /// Client URL with credentials.
+    client_url: Url,
 }
 
 /// Builder for a postgres instance.
@@ -217,21 +215,25 @@ impl Postgres {
     /// Returns a postgres client with superuser credentials.
     #[inline]
     pub fn as_superuser(&self) -> PostgresClient<'_> {
-        let username = self.superuser_url.username();
-        let password = self
-            .superuser_url
-            .password()
-            .expect("Postgres URL must have a password");
-        self.as_user(username, password)
+        PostgresClient {
+            instance: self,
+            client_url: self.superuser_url.clone(),
+        }
     }
 
     /// Returns a postgres client that uses the given credentials.
     #[inline]
     pub fn as_user(&self, username: &str, password: &str) -> PostgresClient<'_> {
+        let mut client_url = self.superuser_url.clone();
+        client_url
+            .set_username(username)
+            .expect("Failed to set username");
+        client_url
+            .set_password(Some(password))
+            .expect("Failed to set password");
         PostgresClient {
             instance: self,
-            username: username.to_string(),
-            password: password.to_string(),
+            client_url,
         }
     }
 
@@ -246,7 +248,9 @@ impl Postgres {
     /// Returns the port the Postgres database is bound to.
     #[inline]
     pub fn port(&self) -> u16 {
-        self.superuser_url.port().expect("Postgres URL must have a port")
+        self.superuser_url
+            .port()
+            .expect("Postgres URL must have a port")
     }
 }
 
@@ -258,15 +262,21 @@ impl<'a> PostgresClient<'a> {
     pub fn psql(&self, database: &str) -> process::Command {
         let mut cmd = process::Command::new(&self.instance.psql_binary);
 
+        let username = self.client_url.username();
+        let password = self
+            .client_url
+            .password()
+            .expect("Client URL must have a password");
+
         cmd.arg("-h")
             .arg(self.instance.host())
             .arg("-p")
             .arg(self.instance.port().to_string())
             .arg("-U")
-            .arg(&self.username)
+            .arg(username)
             .arg("-d")
             .arg(database)
-            .env("PGPASSWORD", &self.password);
+            .env("PGPASSWORD", password);
 
         cmd
     }
@@ -341,25 +351,22 @@ impl<'a> PostgresClient<'a> {
 
     /// Returns the username used by this client.
     pub fn username(&self) -> &str {
-        self.username.as_str()
+        self.client_url.username()
     }
 
     /// Returns a libpq-style connection URI.
     pub fn uri(&self, database: &str) -> String {
-        format!(
-            "postgres://{}:{}@{}:{}/{}",
-            self.username,
-            self.password,
-            self.instance.host(),
-            self.instance.port(),
-            database
-        )
+        let mut url = self.client_url.clone();
+        url.set_path(database);
+        url.to_string()
     }
 
     /// Returns the password used by this client.
     #[inline]
     pub fn password(&self) -> &str {
-        self.password.as_str()
+        self.client_url
+            .password()
+            .expect("Client URL must have a password")
     }
 }
 
