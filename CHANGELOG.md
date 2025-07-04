@@ -4,6 +4,9 @@
 
 - Refactored internal connection handling to use `url::Url` instead of separate fields.
 - `PostgresClient::uri()` renamed to `url()` and returns `Url` instead of `String`.
+- Removed `host()` and `port()` methods from `Postgres`. Use `superuser_url()` and extract values from the URL.
+- Removed `username()` and `password()` methods from `PostgresClient`. Use `client_url()` and extract values from the
+  URL.
 
 ## [0.4.0]
 

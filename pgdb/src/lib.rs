@@ -242,20 +242,9 @@ impl Postgres {
         }
     }
 
-    /// Returns the hostname the Postgres database can be connected to at.
-    #[inline]
-    pub fn host(&self) -> &str {
-        self.superuser_url
-            .host_str()
-            .expect("Postgres URL must have a host")
-    }
-
-    /// Returns the port the Postgres database is bound to.
-    #[inline]
-    pub fn port(&self) -> u16 {
-        self.superuser_url
-            .port()
-            .expect("Postgres URL must have a port")
+    /// Returns the superuser URL for this instance.
+    pub fn superuser_url(&self) -> &Url {
+        &self.superuser_url
     }
 }
 
@@ -273,10 +262,16 @@ impl<'a> PostgresClient<'a> {
             .password()
             .expect("Client URL must have a password");
 
+        let host = self
+            .client_url
+            .host_str()
+            .expect("Client URL must have a host");
+        let port = self.client_url.port().expect("Client URL must have a port");
+
         cmd.arg("-h")
-            .arg(self.instance.host())
+            .arg(host)
             .arg("-p")
-            .arg(self.instance.port().to_string())
+            .arg(port.to_string())
             .arg("-U")
             .arg(username)
             .arg("-d")
@@ -354,11 +349,6 @@ impl<'a> PostgresClient<'a> {
         self.instance
     }
 
-    /// Returns the username used by this client.
-    pub fn username(&self) -> &str {
-        self.client_url.username()
-    }
-
     /// Returns a libpq-style connection URL.
     pub fn url(&self, database: &str) -> Url {
         let mut url = self.client_url.clone();
@@ -366,12 +356,9 @@ impl<'a> PostgresClient<'a> {
         url
     }
 
-    /// Returns the password used by this client.
-    #[inline]
-    pub fn password(&self) -> &str {
-        self.client_url
-            .password()
-            .expect("Client URL must have a password")
+    /// Returns the client URL for this client.
+    pub fn client_url(&self) -> &Url {
+        &self.client_url
     }
 }
 
@@ -604,7 +591,12 @@ mod tests {
             .expect("could not create normal user");
 
         // Command executed successfully, check we used the right password.
-        assert_eq!(su.password(), "helloworld");
+        assert_eq!(
+            su.client_url()
+                .password()
+                .expect("Client URL must have a password"),
+            "helloworld"
+        );
     }
 
     #[test]
@@ -619,9 +611,18 @@ mod tests {
             .start()
             .expect("could not build postgres database");
 
-        assert_ne!(a.port(), b.port());
-        assert_ne!(a.port(), c.port());
-        assert_ne!(b.port(), c.port());
+        assert_ne!(
+            a.superuser_url().port().expect("URL must have a port"),
+            b.superuser_url().port().expect("URL must have a port")
+        );
+        assert_ne!(
+            a.superuser_url().port().expect("URL must have a port"),
+            c.superuser_url().port().expect("URL must have a port")
+        );
+        assert_ne!(
+            b.superuser_url().port().expect("URL must have a port"),
+            c.superuser_url().port().expect("URL must have a port")
+        );
     }
 
     #[test]

@@ -44,8 +44,15 @@ fn main() -> anyhow::Result<()> {
     println!();
     println!("Postgres is now running and ready to accept connections.");
     println!();
-    println!("PGHOST={}", pg.host());
-    println!("PGPORT={}", pg.port());
+    let superuser_url = pg.superuser_url();
+    println!(
+        "PGHOST={}",
+        superuser_url.host_str().expect("URL must have a host")
+    );
+    println!(
+        "PGPORT={}",
+        superuser_url.port().expect("URL must have a port")
+    );
 
     println!(
         "Superuser access:\n\n    {}",
