@@ -257,10 +257,7 @@ impl<'a> PostgresClient<'a> {
         let mut cmd = process::Command::new(&self.instance.psql_binary);
 
         let username = self.client_url.username();
-        let password = self
-            .client_url
-            .password()
-            .expect("Client URL must have a password");
+        let password = self.client_url.password().unwrap_or_default();
 
         let host = self
             .client_url
@@ -591,12 +588,7 @@ mod tests {
             .expect("could not create normal user");
 
         // Command executed successfully, check we used the right password.
-        assert_eq!(
-            su.client_url()
-                .password()
-                .expect("Client URL must have a password"),
-            "helloworld"
-        );
+        assert_eq!(su.client_url().password(), Some("helloworld"));
     }
 
     #[test]
