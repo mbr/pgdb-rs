@@ -7,6 +7,7 @@ repository = { workspace = true }
 documentation = { workspace = true }
 license = { workspace = true }
 description = "Creates and runs Postgres databases through Rust in temporary directories, cleaned up on drop"
+readme = "../README.md"
 
 [dependencies]
 hex_fmt = "0.3.0"
