@@ -24,6 +24,7 @@ struct Opts {
     superuser_pw: Option<String>,
 }
 
+/// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
 
