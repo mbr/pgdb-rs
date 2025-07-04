@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
         pg.as_user(&opts.user, &opts.password).url(&opts.db)
     );
 
-    println!("\nYou can run `psql` with either URI to connect.");
+    println!("\nYou can run `psql` with either URL to connect.");
     loop {
         thread::sleep(Duration::from_secs(60));
     }

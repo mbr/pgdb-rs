@@ -7,8 +7,8 @@ A small Rust to create and run ephemeral Postgres databases, typically used as u
 Tests requiring a fresh database (but not cluster) instance can use `db_fixture`:
 
 ```rust
-let db_uri = pgdb::db_fixture();
-// You can now use `db_uri` in your ORM. The database will not be shut down before `db_uri` is dropped.
+let db_url = pgdb::db_fixture();
+// You can now use `db_url` in your ORM. The database will not be shut down before `db_url` is dropped.
 ```
 
 Note that databases are not cleaned up until the testing process exist.

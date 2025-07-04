@@ -17,32 +17,32 @@ use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
 use url::Url;
 
-/// A database URI keeping a database alive.
+/// A database URL keeping a database alive.
 ///
-/// Contains the output of [`PostgresClient::uri`] and a reference to the database it points to. As
-/// a result, as long as the [`DbUri`] is alive, the database it points to will also be kept
+/// Contains the output of [`PostgresClient::url`] and a reference to the database it points to. As
+/// a result, as long as the [`DbUrl`] is alive, the database it points to will also be kept
 /// running.
 #[derive(Debug)]
-pub struct DbUri {
-    /// A reference to the running Postgres instance where this URI points.
+pub struct DbUrl {
+    /// A reference to the running Postgres instance where this URL points.
     _arc: Arc<Postgres>,
-    /// The actual URI.
-    uri: Url,
+    /// The actual URL.
+    url: Url,
 }
 
-impl DbUri {
+impl DbUrl {
     /// Returns the URL as a string.
     pub fn as_str(&self) -> &str {
-        self.uri.as_str()
+        self.url.as_str()
     }
 
     /// Returns the URL.
     pub fn as_url(&self) -> &Url {
-        &self.uri
+        &self.url
     }
 }
 
-impl AsRef<str> for DbUri {
+impl AsRef<str> for DbUrl {
     fn as_ref(&self) -> &str {
         self.as_str()
     }
@@ -53,13 +53,13 @@ impl AsRef<str> for DbUri {
 /// Some applications just need a clean database instance and can afford to share the underlying
 /// database.
 ///
-/// Uses a shared database instance if multiple tests are running at the same time (see [`DbUri`]
-/// for details). The database may be shut down and recreated if the last [`DbUri`] is dropped
+/// Uses a shared database instance if multiple tests are running at the same time (see [`DbUrl`]
+/// for details). The database may be shut down and recreated if the last [`DbUrl`] is dropped
 /// during testing, e.g. when parallel tests are not spawned quick enough.
 ///
 /// This construction is necessary because `static` variables will not have `Drop` called on them,
 /// without this construction, the spawned Postgres server would not be stopped.
-pub fn db_fixture() -> DbUri {
+pub fn db_fixture() -> DbUrl {
     static DB: Mutex<Weak<Postgres>> = Mutex::new(Weak::new());
 
     static FIXTURE_COUNT: AtomicUsize = AtomicUsize::new(1);
@@ -90,8 +90,8 @@ pub fn db_fixture() -> DbUri {
     pg.as_superuser()
         .create_database(&db_name, &db_user)
         .expect("failed to create database for fixture DB");
-    let uri = pg.as_user(&db_user, &db_pw).url(&db_name);
-    DbUri { _arc: pg, uri }
+    let url = pg.as_user(&db_user, &db_pw).url(&db_name);
+    DbUrl { _arc: pg, url }
 }
 
 /// Finds an unused port by binding to port 0 and letting the OS assign one.
@@ -626,16 +626,16 @@ mod tests {
 
     #[test]
     fn ensure_proper_db_reuse_when_using_fixtures() {
-        let db_uri = crate::db_fixture();
+        let db_url = crate::db_fixture();
         assert_eq!(
-            &db_uri.as_str()[..51],
+            &db_url.as_str()[..51],
             "postgres://fixture_user_1:fixture_pass_1@127.0.0.1:"
         );
 
         // Calling `db_fixture` multiple times reuses the postgres process, but creates a fresh database instance and role.
-        let db_uri2 = crate::db_fixture();
+        let db_url2 = crate::db_fixture();
         assert_eq!(
-            &db_uri2.as_str()[..51],
+            &db_url2.as_str()[..51],
             "postgres://fixture_user_2:fixture_pass_2@127.0.0.1:"
         );
     }
