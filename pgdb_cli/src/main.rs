@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use std::{thread, time::Duration};
 
 use structopt::StructOpt;
