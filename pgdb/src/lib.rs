@@ -15,6 +15,7 @@ use std::{
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
 use thiserror::Error;
+use url::Url;
 
 /// A database URI keeping a database alive.
 ///
@@ -105,19 +106,13 @@ fn find_unused_port() -> io::Result<u16> {
 /// and the temporary directory containing all of its data removed.
 #[derive(Debug)]
 pub struct Postgres {
-    /// Host address of the instance.
-    host: String,
-    /// Port the instance is running on.
-    port: u16,
+    /// Base URL for the instance with superuser credentials.
+    base_url: Url,
     /// Instance of the postgres process.
     #[allow(dead_code)] // Only used for its `Drop` implementation.
     instance: ProcessGuard,
     /// Path to the `psql` binary.
     psql_binary: path::PathBuf,
-    /// Superuser name.
-    superuser: String,
-    /// Superuser's password.
-    superuser_pw: String,
     /// Directory holding all the temporary data.
     #[allow(dead_code)] // Only used for its `Drop` implementation.
     tmp_dir: tempfile::TempDir,
@@ -222,7 +217,12 @@ impl Postgres {
     /// Returns a postgres client with superuser credentials.
     #[inline]
     pub fn as_superuser(&self) -> PostgresClient<'_> {
-        self.as_user(&self.superuser, &self.superuser_pw)
+        let username = self.base_url.username();
+        let password = self
+            .base_url
+            .password()
+            .expect("Postgres URL must have a password");
+        self.as_user(username, password)
     }
 
     /// Returns a postgres client that uses the given credentials.
@@ -238,13 +238,15 @@ impl Postgres {
     /// Returns the hostname the Postgres database can be connected to at.
     #[inline]
     pub fn host(&self) -> &str {
-        self.host.as_str()
+        self.base_url
+            .host_str()
+            .expect("Postgres URL must have a host")
     }
 
     /// Returns the port the Postgres database is bound to.
     #[inline]
     pub fn port(&self) -> u16 {
-        self.port
+        self.base_url.port().expect("Postgres URL must have a port")
     }
 }
 
@@ -257,9 +259,9 @@ impl<'a> PostgresClient<'a> {
         let mut cmd = process::Command::new(&self.instance.psql_binary);
 
         cmd.arg("-h")
-            .arg(&self.instance.host)
+            .arg(self.instance.host())
             .arg("-p")
-            .arg(self.instance.port.to_string())
+            .arg(self.instance.port().to_string())
             .arg("-U")
             .arg(&self.username)
             .arg("-d")
@@ -524,13 +526,16 @@ impl PostgresBuilder {
             }
         }
 
+        let base_url = Url::parse(&format!(
+            "postgres://{}:{}@{}:{}",
+            self.superuser, self.superuser_pw, self.host, port
+        ))
+        .expect("Failed to construct base URL");
+
         Ok(Postgres {
-            host: self.host.clone(),
-            port,
+            base_url,
             instance,
             psql_binary,
-            superuser: self.superuser.clone(),
-            superuser_pw: self.superuser_pw.clone(),
             tmp_dir,
         })
     }
