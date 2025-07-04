@@ -604,7 +604,7 @@ mod tests {
             .expect("could not create normal user");
 
         // Command executed successfully, check we used the right password.
-        assert_eq!(su.password, "helloworld");
+        assert_eq!(su.password(), "helloworld");
     }
 
     #[test]
