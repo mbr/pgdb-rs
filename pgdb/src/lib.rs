@@ -106,8 +106,8 @@ fn find_unused_port() -> io::Result<u16> {
 /// and the temporary directory containing all of its data removed.
 #[derive(Debug)]
 pub struct Postgres {
-    /// Base URL for the instance with superuser credentials.
-    base_url: Url,
+    /// URL for the instance with superuser credentials.
+    superuser_url: Url,
     /// Instance of the postgres process.
     #[allow(dead_code)] // Only used for its `Drop` implementation.
     instance: ProcessGuard,
@@ -217,9 +217,9 @@ impl Postgres {
     /// Returns a postgres client with superuser credentials.
     #[inline]
     pub fn as_superuser(&self) -> PostgresClient<'_> {
-        let username = self.base_url.username();
+        let username = self.superuser_url.username();
         let password = self
-            .base_url
+            .superuser_url
             .password()
             .expect("Postgres URL must have a password");
         self.as_user(username, password)
@@ -238,7 +238,7 @@ impl Postgres {
     /// Returns the hostname the Postgres database can be connected to at.
     #[inline]
     pub fn host(&self) -> &str {
-        self.base_url
+        self.superuser_url
             .host_str()
             .expect("Postgres URL must have a host")
     }
@@ -246,7 +246,7 @@ impl Postgres {
     /// Returns the port the Postgres database is bound to.
     #[inline]
     pub fn port(&self) -> u16 {
-        self.base_url.port().expect("Postgres URL must have a port")
+        self.superuser_url.port().expect("Postgres URL must have a port")
     }
 }
 
@@ -526,14 +526,14 @@ impl PostgresBuilder {
             }
         }
 
-        let base_url = Url::parse(&format!(
+        let superuser_url = Url::parse(&format!(
             "postgres://{}:{}@{}:{}",
             self.superuser, self.superuser_pw, self.host, port
         ))
         .expect("Failed to construct base URL");
 
         Ok(Postgres {
-            base_url,
+            superuser_url,
             instance,
             psql_binary,
             tmp_dir,
