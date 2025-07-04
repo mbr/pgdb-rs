@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [unreleased]
+
+- Refactored internal connection handling to use `url::Url` instead of separate fields.
+- `PostgresClient::uri()` renamed to `url()` and returns `Url` instead of `String`.
+
 ## [0.4.0]
 
 - The library now uses a random, unused port when launching postgres instances. CLI still defaults to `15432`.

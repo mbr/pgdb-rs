@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
 
     println!(
         "Superuser access:\n\n    {}",
-        pg.as_superuser().uri("postgres")
+        pg.as_superuser().url("postgres")
     );
 
     println!(
@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
 
     println!(
         "Regular user access:\n\n    {}",
-        pg.as_user(&opts.user, &opts.password).uri(&opts.db)
+        pg.as_user(&opts.user, &opts.password).url(&opts.db)
     );
 
     println!("\nYou can run `psql` with either URI to connect.");

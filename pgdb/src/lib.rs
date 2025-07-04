@@ -27,13 +27,18 @@ pub struct DbUri {
     /// A reference to the running Postgres instance where this URI points.
     _arc: Arc<Postgres>,
     /// The actual URI.
-    uri: String,
+    uri: Url,
 }
 
 impl DbUri {
-    /// Returns the
+    /// Returns the URL as a string.
     pub fn as_str(&self) -> &str {
         self.uri.as_str()
+    }
+
+    /// Returns the URL.
+    pub fn as_url(&self) -> &Url {
+        &self.uri
     }
 }
 
@@ -85,7 +90,7 @@ pub fn db_fixture() -> DbUri {
     pg.as_superuser()
         .create_database(&db_name, &db_user)
         .expect("failed to create database for fixture DB");
-    let uri = pg.as_user(&db_user, &db_pw).uri(&db_name);
+    let uri = pg.as_user(&db_user, &db_pw).url(&db_name);
     DbUri { _arc: pg, uri }
 }
 
@@ -354,11 +359,11 @@ impl<'a> PostgresClient<'a> {
         self.client_url.username()
     }
 
-    /// Returns a libpq-style connection URI.
-    pub fn uri(&self, database: &str) -> String {
+    /// Returns a libpq-style connection URL.
+    pub fn url(&self, database: &str) -> Url {
         let mut url = self.client_url.clone();
         url.set_path(database);
-        url.to_string()
+        url
     }
 
     /// Returns the password used by this client.
