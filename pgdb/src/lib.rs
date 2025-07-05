@@ -133,59 +133,78 @@ fn parse_external_test_url() -> Result<Option<Url>, Error> {
     }
 }
 
-/// Creates a new database on an external PostgreSQL instance.
-fn create_external_fixture_db(superuser_url: &Url) -> Url {
+/// Executes SQL using psql with the given connection parameters.
+fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
+    let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
+    let username = superuser_url.username();
+    let password = superuser_url.password().unwrap_or_default();
+    let host = superuser_url.host_str().expect("URL must have a host");
+    let port = superuser_url.port().unwrap_or(5432);
+
+    let status = process::Command::new(&psql_binary)
+        .arg("-h")
+        .arg(host)
+        .arg("-p")
+        .arg(port.to_string())
+        .arg("-U")
+        .arg(username)
+        .arg("-d")
+        .arg(database)
+        .arg("-c")
+        .arg(sql)
+        .env("PGPASSWORD", password)
+        .status()
+        .map_err(Error::RunPsql)?;
+
+    if !status.success() {
+        return Err(Error::PsqlFailed(status));
+    }
+
+    Ok(())
+}
+
+/// Creates a user and database with the given credentials using psql.
+fn create_user_and_database(
+    superuser_url: &Url,
+    db_name: &str,
+    db_user: &str,
+    db_pw: &str,
+) -> Result<(), Error> {
+    // Create user
+    run_psql_command(
+        superuser_url,
+        "postgres",
+        &format!(
+            "CREATE ROLE {} LOGIN ENCRYPTED PASSWORD {};",
+            escape_ident(db_user),
+            escape_string(db_pw)
+        ),
+    )?;
+
+    // Create database
+    run_psql_command(
+        superuser_url,
+        "postgres",
+        &format!(
+            "CREATE DATABASE {} OWNER {};",
+            escape_ident(db_name),
+            escape_ident(db_user)
+        ),
+    )?;
+
+    Ok(())
+}
+
+/// Creates a new fixture database with random credentials.
+fn create_fixture_db(superuser_url: &Url) -> Result<Url, Error> {
     // Generate unique credentials with random IDs
     let random_id = generate_random_string();
     let db_name = format!("fixture_db_{}", random_id);
     let db_user = format!("fixture_user_{}", random_id);
     let db_pw = format!("fixture_pass_{}", random_id);
 
-    let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
-
-    // Helper to run psql commands
-    let run_sql = |sql: &str| -> Result<(), Error> {
-        let username = superuser_url.username();
-        let password = superuser_url.password().unwrap_or_default();
-        let host = superuser_url.host_str().expect("URL must have a host");
-        let port = superuser_url.port().unwrap_or(5432);
-
-        let status = process::Command::new(&psql_binary)
-            .arg("-h")
-            .arg(host)
-            .arg("-p")
-            .arg(port.to_string())
-            .arg("-U")
-            .arg(username)
-            .arg("-d")
-            .arg("postgres")
-            .arg("-c")
-            .arg(sql)
-            .env("PGPASSWORD", password)
-            .status()
-            .map_err(Error::RunPsql)?;
-
-        if !status.success() {
-            return Err(Error::PsqlFailed(status));
-        }
-
-        Ok(())
-    };
-
     // Create user and database
-    run_sql(&format!(
-        "CREATE ROLE {} LOGIN ENCRYPTED PASSWORD {};",
-        escape_ident(&db_user),
-        escape_string(&db_pw)
-    ))
-    .expect("failed to create user for fixture DB");
-
-    run_sql(&format!(
-        "CREATE DATABASE {} OWNER {};",
-        escape_ident(&db_name),
-        escape_ident(&db_user)
-    ))
-    .expect("failed to create database for fixture DB");
+    create_user_and_database(superuser_url, &db_name, &db_user, &db_pw)?;
 
     // Build the URL for the new database
     let mut url = superuser_url.clone();
@@ -194,7 +213,7 @@ fn create_external_fixture_db(superuser_url: &Url) -> Url {
         .expect("Failed to set password");
     url.set_path(&db_name);
 
-    url
+    Ok(url)
 }
 
 /// A convenience function for regular applications.
@@ -215,7 +234,7 @@ fn create_external_fixture_db(superuser_url: &Url) -> Url {
 pub fn db_fixture() -> DbUrl {
     // Check for external database URL first
     if let Some(external_url) = parse_external_test_url().expect("invalid PGDB_TESTS_URL") {
-        let url = create_external_fixture_db(&external_url);
+        let url = create_fixture_db(&external_url).expect("failed to create external fixture DB");
         return DbUrl::External {
             url,
             superuser_url: external_url,
@@ -240,18 +259,8 @@ pub fn db_fixture() -> DbUrl {
         }
     };
 
-    // Generate unique credentials with random IDs
-    let random_id = generate_random_string();
-    let db_name = format!("fixture_db_{}", random_id);
-    let db_user = format!("fixture_user_{}", random_id);
-    let db_pw = format!("fixture_pass_{}", random_id);
-    pg.as_superuser()
-        .create_user(&db_user, &db_pw)
-        .expect("failed to create user for fixture DB");
-    pg.as_superuser()
-        .create_database(&db_name, &db_user)
-        .expect("failed to create database for fixture DB");
-    let url = pg.as_user(&db_user, &db_pw).url(&db_name);
+    // Use unified fixture creation for local databases too
+    let url = create_fixture_db(pg.superuser_url()).expect("failed to create local fixture DB");
     DbUrl::Local { _arc: pg, url }
 }
 
