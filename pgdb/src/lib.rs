@@ -385,8 +385,8 @@ impl PostgresBuilder {
 
     /// Sets listening port.
     ///
-    /// If no port is set, the builder will attempt to find an unused through binding port `0`. This
-    /// is somewhat racing, but the only recourse, since Postgres does not support binding to port
+    /// If no port is set, the builder will attempt to find an unused port through binding to port `0`. This
+    /// is somewhat racy, but the only recourse, since Postgres does not support binding to port
     /// `0`.
     #[inline]
     pub fn port(&mut self, port: u16) -> &mut Self {

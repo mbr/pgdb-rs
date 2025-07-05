@@ -29,4 +29,4 @@ This will:
 ## Requirements
 
 PostgreSQL binaries (`postgres`, `initdb`, `psql`) must be available in your `PATH`, `pgdb_cli` does not ship or install
-Postgresql.
+PostgreSQL.

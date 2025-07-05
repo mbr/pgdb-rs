@@ -1,6 +1,6 @@
 # pgdb
 
-A small Rust to create and run ephemeral Postgres databases, typically used as unit test fixtures.
+A small Rust library to create and run ephemeral Postgres databases, typically used as unit test fixtures.
 
 ## Quick start
 
@@ -11,9 +11,9 @@ let db_url = pgdb::db_fixture();
 // You can now use `db_url` in your ORM. The database will not be shut down before `db_url` is dropped.
 ```
 
-Note that databases are not cleaned up until the testing process exist.
+Note that databases are not cleaned up until the testing process exits.
 
-Requires regular Postgres database utilities like `postgres` and `initdb` are available on the path at runtime.
+Requires that regular Postgres database utilities like `postgres` and `initdb` are available on the path at runtime.
 
 ## Detailed usage
 
