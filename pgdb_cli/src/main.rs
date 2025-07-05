@@ -1,8 +1,9 @@
 #![doc = include_str!("../README.md")]
 
-use std::{thread, time::Duration};
+use std::{env, thread, time::Duration};
 
 use structopt::StructOpt;
+use url::Url;
 
 /// Create a temporary postgres database with one user owning a single DB.
 #[derive(Debug, StructOpt)]
@@ -28,49 +29,105 @@ struct Opts {
 fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
 
-    let mut builder = pgdb::Postgres::build();
-    if let Some(superuser_pw) = opts.superuser_pw {
-        builder.superuser_pw(superuser_pw);
-    }
+    // Check for external database URL
+    if let Ok(external_url_str) = env::var("PGDB_TESTS_URL") {
+        // Parse and validate the external URL
+        let external_url = Url::parse(&external_url_str)?;
 
-    // Select a default port that does not clash with the default port of `pgdb`, in case it is used
-    // by unit tests.
-    builder.port(opts.port.unwrap_or(15432));
+        // Validate it's a PostgreSQL URL
+        if external_url.scheme() != "postgres" {
+            anyhow::bail!("PGDB_TESTS_URL must use postgres:// scheme");
+        }
 
-    let pg = builder.start()?;
-    pg.as_superuser().create_user(&opts.user, &opts.password)?;
-    pg.as_superuser().create_database(&opts.db, &opts.user)?;
+        // Create temporary directory even for external database (as per TODO)
+        let _tmp_dir = tempfile::TempDir::new()?;
 
-    println!();
-    println!("Postgres is now running and ready to accept connections.");
-    println!();
-    let superuser_url = pg.superuser_url();
-    println!(
-        "PGHOST={}",
-        superuser_url.host_str().expect("URL must have a host")
-    );
-    println!(
-        "PGPORT={}",
-        superuser_url.port().expect("URL must have a port")
-    );
+        // Use the pgdb library's unified functions to create user and database
+        use pgdb::create_user_and_database;
 
-    println!(
-        "Superuser access:\n\n    {}",
-        pg.as_superuser().url("postgres")
-    );
+        // Create the user and database on the external server
+        create_user_and_database(&external_url, &opts.db, &opts.user, &opts.password)?;
 
-    println!(
-        "\nA database named `{}`, owned by a user `{}` has been created.\n",
-        opts.db, opts.user
-    );
+        // Build the user URL
+        let mut user_url = external_url.clone();
+        user_url
+            .set_username(&opts.user)
+            .expect("Failed to set username");
+        user_url
+            .set_password(Some(&opts.password))
+            .expect("Failed to set password");
+        user_url.set_path(&opts.db);
 
-    println!(
-        "Regular user access:\n\n    {}",
-        pg.as_user(&opts.user, &opts.password).url(&opts.db)
-    );
+        println!();
+        println!("Connected to external PostgreSQL instance.");
+        println!();
+        println!(
+            "PGHOST={}",
+            external_url.host_str().expect("URL must have a host")
+        );
+        println!("PGPORT={}", external_url.port().unwrap_or(5432));
 
-    println!("\nYou can run `psql` with either URL to connect.");
-    loop {
-        thread::sleep(Duration::from_secs(60));
+        println!("Superuser access:\n\n    {}", external_url.as_str());
+
+        println!(
+            "\nA database named `{}`, owned by a user `{}` has been created.\n",
+            opts.db, opts.user
+        );
+
+        println!("Regular user access:\n\n    {}", user_url.as_str());
+
+        println!("\nYou can run `psql` with either URL to connect.");
+        println!("\n(Using external PostgreSQL instance from PGDB_TESTS_URL)");
+
+        loop {
+            thread::sleep(Duration::from_secs(60));
+        }
+    } else {
+        // Original local database logic
+        let mut builder = pgdb::Postgres::build();
+        if let Some(superuser_pw) = opts.superuser_pw {
+            builder.superuser_pw(superuser_pw);
+        }
+
+        // Select a default port that does not clash with the default port of `pgdb`, in case it is used
+        // by unit tests.
+        builder.port(opts.port.unwrap_or(15432));
+
+        let pg = builder.start()?;
+        pg.as_superuser().create_user(&opts.user, &opts.password)?;
+        pg.as_superuser().create_database(&opts.db, &opts.user)?;
+
+        println!();
+        println!("Postgres is now running and ready to accept connections.");
+        println!();
+        let superuser_url = pg.superuser_url();
+        println!(
+            "PGHOST={}",
+            superuser_url.host_str().expect("URL must have a host")
+        );
+        println!(
+            "PGPORT={}",
+            superuser_url.port().expect("URL must have a port")
+        );
+
+        println!(
+            "Superuser access:\n\n    {}",
+            pg.as_superuser().url("postgres")
+        );
+
+        println!(
+            "\nA database named `{}`, owned by a user `{}` has been created.\n",
+            opts.db, opts.user
+        );
+
+        println!(
+            "Regular user access:\n\n    {}",
+            pg.as_user(&opts.user, &opts.password).url(&opts.db)
+        );
+
+        println!("\nYou can run `psql` with either URL to connect.");
+        loop {
+            thread::sleep(Duration::from_secs(60));
+        }
     }
 }

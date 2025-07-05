@@ -26,6 +26,20 @@ This will:
 - Display connection information
 - Keep running until interrupted (Ctrl+C)
 
+## External Database Support
+
+You can use `pgdb_cli` with an existing PostgreSQL server by setting the `PGDB_TESTS_URL` environment variable:
+
+```bash
+PGDB_TESTS_URL=postgres://postgres:password@localhost:5432/postgres pgdb
+```
+
+When using an external database:
+- The URL must use the `postgres://` scheme and include superuser credentials
+- `pgdb_cli` will create the specified user and database on the external server
+- The connection details (host, port) will match the external server
+- A temporary directory is still created for consistency
+
 ## Requirements
 
 PostgreSQL binaries (`postgres`, `initdb`, `psql`) must be available in your `PATH`, `pgdb_cli` does not ship or install

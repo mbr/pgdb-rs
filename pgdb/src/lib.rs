@@ -134,7 +134,7 @@ fn parse_external_test_url() -> Result<Option<Url>, Error> {
 }
 
 /// Executes SQL using psql with the given connection parameters.
-fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
+pub fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
     let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
     let username = superuser_url.username();
     let password = superuser_url.password().unwrap_or_default();
@@ -164,7 +164,7 @@ fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<()
 }
 
 /// Creates a user and database with the given credentials using psql.
-fn create_user_and_database(
+pub fn create_user_and_database(
     superuser_url: &Url,
     db_name: &str,
     db_user: &str,

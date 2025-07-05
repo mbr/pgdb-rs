@@ -13,6 +13,8 @@ readme = "README.md"
 pgdb = { version = "0.4.0", path = "../pgdb" }
 structopt = "0.3.21"
 anyhow = "1.0.41"
+url = "2.2.2"
+tempfile = "3.2.0"
 
 [[bin]]
 name = "pgdb"
