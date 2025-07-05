@@ -63,23 +63,19 @@ fn parse_external_test_url() -> Result<Option<Url>, Error> {
     match env::var("PGDB_TESTS_URL") {
         Ok(url_str) => {
             let url = Url::parse(&url_str)
-                .map_err(|e| Error::InvalidExternalUrl(format!("invalid URL: {}", e)))?;
+                .map_err(|e| Error::InvalidExternalUrl(ExternalUrlError::ParseError(e)))?;
 
             // Validate that it's a complete PostgreSQL URL
             if url.scheme() != "postgres" {
-                return Err(Error::InvalidExternalUrl(
-                    "must use postgres:// scheme".to_string(),
-                ));
+                return Err(Error::InvalidExternalUrl(ExternalUrlError::InvalidScheme));
             }
 
             if url.host_str().is_none() {
-                return Err(Error::InvalidExternalUrl("must include a host".to_string()));
+                return Err(Error::InvalidExternalUrl(ExternalUrlError::MissingHost));
             }
 
             if url.username().is_empty() {
-                return Err(Error::InvalidExternalUrl(
-                    "must include a username".to_string(),
-                ));
+                return Err(Error::InvalidExternalUrl(ExternalUrlError::MissingUsername));
             }
 
             Ok(Some(url))
@@ -275,8 +271,25 @@ pub struct PostgresBuilder {
     startup_timeout: Duration,
 }
 
+/// Errors that can occur when parsing an external database URL.
+#[derive(Debug, Error)]
+pub enum ExternalUrlError {
+    /// URL parsing failed.
+    #[error("invalid URL: {0}")]
+    ParseError(#[source] url::ParseError),
+    /// Wrong URL scheme.
+    #[error("must use postgres:// scheme")]
+    InvalidScheme,
+    /// Missing host.
+    #[error("must include a host")]
+    MissingHost,
+    /// Missing username.
+    #[error("must include a username")]
+    MissingUsername,
+}
+
 /// A Postgres server error.
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     #[error("could not find `postgres` binary")]
     FindPostgres(which::Error),
@@ -311,8 +324,8 @@ pub enum Error {
     #[error("`psql` exited with status {}", 0)]
     PsqlFailed(process::ExitStatus),
     /// Invalid external test URL.
-    #[error("invalid PGDB_TESTS_URL: {0}")]
-    InvalidExternalUrl(String),
+    #[error("invalid PGDB_TESTS_URL")]
+    InvalidExternalUrl(#[source] ExternalUrlError),
 }
 
 impl Postgres {
