@@ -27,8 +27,13 @@ pub enum DbUrl {
         /// The actual URL.
         url: Url,
     },
-    /// An external database URL without lifecycle management.
-    External(Url),
+    /// An external database URL with cleanup information.
+    External {
+        /// The database URL.
+        url: Url,
+        /// The superuser URL for cleanup operations.
+        superuser_url: Url,
+    },
 }
 
 impl DbUrl {
@@ -36,7 +41,7 @@ impl DbUrl {
     pub fn as_str(&self) -> &str {
         match self {
             DbUrl::Local { url, .. } => url.as_str(),
-            DbUrl::External(url) => url.as_str(),
+            DbUrl::External { url, .. } => url.as_str(),
         }
     }
 
@@ -44,7 +49,7 @@ impl DbUrl {
     pub fn as_url(&self) -> &Url {
         match self {
             DbUrl::Local { url, .. } => url,
-            DbUrl::External(url) => url,
+            DbUrl::External { url, .. } => url,
         }
     }
 }
@@ -52,6 +57,50 @@ impl DbUrl {
 impl AsRef<str> for DbUrl {
     fn as_ref(&self) -> &str {
         self.as_str()
+    }
+}
+
+impl Drop for DbUrl {
+    fn drop(&mut self) {
+        if let DbUrl::External { url, superuser_url } = self {
+            // Extract database and user names from the URL
+            let db_name = url.path().trim_start_matches('/');
+            let db_user = url.username();
+
+            // Best effort cleanup - we don't want to panic in drop
+            let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
+
+            // Helper to run cleanup SQL
+            let run_cleanup_sql = |sql: &str| {
+                let username = superuser_url.username();
+                let password = superuser_url.password().unwrap_or_default();
+                let host = superuser_url.host_str().unwrap_or("localhost");
+                let port = superuser_url.port().unwrap_or(5432);
+
+                let _ = process::Command::new(&psql_binary)
+                    .arg("-h")
+                    .arg(host)
+                    .arg("-p")
+                    .arg(port.to_string())
+                    .arg("-U")
+                    .arg(username)
+                    .arg("-d")
+                    .arg("postgres")
+                    .arg("-c")
+                    .arg(sql)
+                    .env("PGPASSWORD", password)
+                    .output();
+            };
+
+            // Drop database first (this will fail if there are active connections)
+            run_cleanup_sql(&format!(
+                "DROP DATABASE IF EXISTS {};",
+                escape_ident(db_name)
+            ));
+
+            // Drop user
+            run_cleanup_sql(&format!("DROP ROLE IF EXISTS {};", escape_ident(db_user)));
+        }
     }
 }
 
@@ -167,7 +216,10 @@ pub fn db_fixture() -> DbUrl {
     // Check for external database URL first
     if let Some(external_url) = parse_external_test_url().expect("invalid PGDB_TESTS_URL") {
         let url = create_external_fixture_db(&external_url);
-        return DbUrl::External(url);
+        return DbUrl::External {
+            url,
+            superuser_url: external_url,
+        };
     }
 
     static DB: Mutex<Weak<Postgres>> = Mutex::new(Weak::new());
@@ -765,7 +817,7 @@ mod tests {
                 // Verify they have different databases/users
                 assert_ne!(db_url.as_str(), db_url2.as_str());
             }
-            (crate::DbUrl::External(_), crate::DbUrl::External(_)) => {
+            (crate::DbUrl::External { .. }, crate::DbUrl::External { .. }) => {
                 // When using external database, verify separate databases are created
                 assert!(db_url.as_str().contains("fixture_user_"));
                 assert!(db_url.as_str().contains("fixture_pass_"));
@@ -784,5 +836,102 @@ mod tests {
             }
             _ => panic!("Inconsistent DbUrl types returned from db_fixture"),
         }
+    }
+
+    #[test]
+    fn external_db_cleanup_on_drop() {
+        // Only run this test when external database is configured
+        if crate::parse_external_test_url().unwrap().is_none() {
+            return;
+        }
+
+        let superuser_url = crate::parse_external_test_url().unwrap().unwrap();
+        let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
+
+        // Create a database fixture
+        let (db_name, db_user) = {
+            let db_url = crate::db_fixture();
+
+            // Extract the database and user names from URL
+            match &db_url {
+                crate::DbUrl::External { url, .. } => {
+                    let db_name = url.path().trim_start_matches('/').to_string();
+                    let db_user = url.username().to_string();
+                    (db_name, db_user)
+                }
+                _ => panic!("Expected external database"),
+            }
+        }; // db_url is dropped here, should trigger cleanup
+
+        // Give Drop some time to execute
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Check if database was dropped
+        let check_db_exists = |name: &str| -> bool {
+            let username = superuser_url.username();
+            let password = superuser_url.password().unwrap_or_default();
+            let host = superuser_url.host_str().unwrap();
+            let port = superuser_url.port().unwrap_or(5432);
+
+            let output = std::process::Command::new(&psql_binary)
+                .arg("-h")
+                .arg(host)
+                .arg("-p")
+                .arg(port.to_string())
+                .arg("-U")
+                .arg(username)
+                .arg("-d")
+                .arg("postgres")
+                .arg("-t")
+                .arg("-c")
+                .arg(&format!(
+                    "SELECT 1 FROM pg_database WHERE datname = '{}'",
+                    name
+                ))
+                .env("PGPASSWORD", password)
+                .output()
+                .expect("Failed to check database existence");
+
+            String::from_utf8_lossy(&output.stdout).trim() == "1"
+        };
+
+        // Check if user was dropped
+        let check_user_exists = |name: &str| -> bool {
+            let username = superuser_url.username();
+            let password = superuser_url.password().unwrap_or_default();
+            let host = superuser_url.host_str().unwrap();
+            let port = superuser_url.port().unwrap_or(5432);
+
+            let output = std::process::Command::new(&psql_binary)
+                .arg("-h")
+                .arg(host)
+                .arg("-p")
+                .arg(port.to_string())
+                .arg("-U")
+                .arg(username)
+                .arg("-d")
+                .arg("postgres")
+                .arg("-t")
+                .arg("-c")
+                .arg(&format!(
+                    "SELECT 1 FROM pg_roles WHERE rolname = '{}'",
+                    name
+                ))
+                .env("PGPASSWORD", password)
+                .output()
+                .expect("Failed to check user existence");
+
+            String::from_utf8_lossy(&output.stdout).trim() == "1"
+        };
+
+        // Verify cleanup
+        assert!(
+            !check_db_exists(&db_name),
+            "Database should have been dropped"
+        );
+        assert!(
+            !check_user_exists(&db_user),
+            "User should have been dropped"
+        );
     }
 }
