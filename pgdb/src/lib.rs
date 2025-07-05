@@ -4,10 +4,7 @@ use std::{
     env, fs, io, net,
     net::TcpListener,
     path, process,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, Weak,
-    },
+    sync::{Arc, Mutex, Weak},
     thread,
     time::{Duration, Instant},
 };
@@ -76,9 +73,7 @@ fn parse_external_test_url() -> Result<Option<Url>, Error> {
             }
 
             if url.host_str().is_none() {
-                return Err(Error::InvalidExternalUrl(
-                    "must include a host".to_string(),
-                ));
+                return Err(Error::InvalidExternalUrl("must include a host".to_string()));
             }
 
             if url.username().is_empty() {
@@ -94,12 +89,12 @@ fn parse_external_test_url() -> Result<Option<Url>, Error> {
 }
 
 /// Creates a new database on an external PostgreSQL instance.
-fn create_external_fixture_db(superuser_url: &Url, count: usize) -> Url {
-    // Generate unique credentials with random suffix to avoid conflicts
-    let random_suffix: u32 = OsRng.gen();
-    let db_name = format!("fixture_db_{}_{}", count, random_suffix);
-    let db_user = format!("fixture_user_{}_{}", count, random_suffix);
-    let db_pw = format!("fixture_pass_{}_{}", count, random_suffix);
+fn create_external_fixture_db(superuser_url: &Url) -> Url {
+    // Generate unique credentials with random IDs
+    let random_id = generate_random_string();
+    let db_name = format!("fixture_db_{}", random_id);
+    let db_user = format!("fixture_user_{}", random_id);
+    let db_pw = format!("fixture_pass_{}", random_id);
 
     let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
 
@@ -173,12 +168,9 @@ fn create_external_fixture_db(superuser_url: &Url, count: usize) -> Url {
 /// This construction is necessary because `static` variables will not have `Drop` called on them,
 /// without this construction, the spawned Postgres server would not be stopped.
 pub fn db_fixture() -> DbUrl {
-    static FIXTURE_COUNT: AtomicUsize = AtomicUsize::new(1);
-
     // Check for external database URL first
     if let Some(external_url) = parse_external_test_url().expect("invalid PGDB_TESTS_URL") {
-        let count = FIXTURE_COUNT.fetch_add(1, Ordering::Relaxed);
-        let url = create_external_fixture_db(&external_url, count);
+        let url = create_external_fixture_db(&external_url);
         return DbUrl::External(url);
     }
 
@@ -200,10 +192,11 @@ pub fn db_fixture() -> DbUrl {
         }
     };
 
-    let count = FIXTURE_COUNT.fetch_add(1, Ordering::Relaxed);
-    let db_name = format!("fixture_db_{}", count);
-    let db_user = format!("fixture_user_{}", count);
-    let db_pw = format!("fixture_pass_{}", count);
+    // Generate unique credentials with random IDs
+    let random_id = generate_random_string();
+    let db_name = format!("fixture_db_{}", random_id);
+    let db_user = format!("fixture_user_{}", random_id);
+    let db_pw = format!("fixture_pass_{}", random_id);
     pg.as_superuser()
         .create_user(&db_user, &db_pw)
         .expect("failed to create user for fixture DB");
@@ -747,24 +740,30 @@ mod tests {
 
         match (&db_url, &db_url2) {
             (crate::DbUrl::Local { .. }, crate::DbUrl::Local { .. }) => {
-                // When using local databases, verify the fixture numbering
-                assert!(db_url.as_str().contains("fixture_user_1"));
-                assert!(db_url.as_str().contains("fixture_pass_1"));
-                assert!(db_url.as_str().contains("fixture_db_1"));
+                // When using local databases, verify they have fixture prefixes
+                assert!(db_url.as_str().contains("fixture_user_"));
+                assert!(db_url.as_str().contains("fixture_pass_"));
+                assert!(db_url.as_str().contains("fixture_db_"));
 
-                assert!(db_url2.as_str().contains("fixture_user_2"));
-                assert!(db_url2.as_str().contains("fixture_pass_2"));
-                assert!(db_url2.as_str().contains("fixture_db_2"));
+                assert!(db_url2.as_str().contains("fixture_user_"));
+                assert!(db_url2.as_str().contains("fixture_pass_"));
+                assert!(db_url2.as_str().contains("fixture_db_"));
+
+                // Verify they have different databases/users
+                assert_ne!(db_url.as_str(), db_url2.as_str());
             }
             (crate::DbUrl::External(_), crate::DbUrl::External(_)) => {
                 // When using external database, verify separate databases are created
-                assert!(db_url.as_str().contains("fixture_user_1"));
-                assert!(db_url.as_str().contains("fixture_pass_1"));
-                assert!(db_url.as_str().contains("fixture_db_1"));
+                assert!(db_url.as_str().contains("fixture_user_"));
+                assert!(db_url.as_str().contains("fixture_pass_"));
+                assert!(db_url.as_str().contains("fixture_db_"));
 
-                assert!(db_url2.as_str().contains("fixture_user_2"));
-                assert!(db_url2.as_str().contains("fixture_pass_2"));
-                assert!(db_url2.as_str().contains("fixture_db_2"));
+                assert!(db_url2.as_str().contains("fixture_user_"));
+                assert!(db_url2.as_str().contains("fixture_pass_"));
+                assert!(db_url2.as_str().contains("fixture_db_"));
+
+                // Verify they have different databases/users
+                assert_ne!(db_url.as_str(), db_url2.as_str());
 
                 // But they should use the same host/port
                 assert_eq!(db_url.as_url().host_str(), db_url2.as_url().host_str());
