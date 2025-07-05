@@ -537,7 +537,7 @@ impl PostgresBuilder {
     }
 }
 
-/// Generates a random hex string string 32 characters long.
+/// Generates a random hex string 32 characters long.
 fn generate_random_string() -> String {
     let raw: [u8; 16] = OsRng.gen();
     format!("{:x}", hex_fmt::HexFmt(&raw))
