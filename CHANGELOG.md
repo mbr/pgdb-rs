@@ -16,7 +16,6 @@
 - Removed `host()` and `port()` methods from `Postgres`. Use `superuser_url()` and extract values from the URL.
 - Removed `username()` and `password()` methods from `PostgresClient`. Use `client_url()` and extract values from the
   URL.
-- `pgdb_cli` now supports `--postgres-bin` to specify the binary path. This option can also set via `PGDB_POSTGRES_BIN`.
 
 ## [0.4.0]
 
