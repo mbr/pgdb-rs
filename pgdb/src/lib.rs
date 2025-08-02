@@ -893,7 +893,7 @@ mod tests {
                 .arg("postgres")
                 .arg("-t")
                 .arg("-c")
-                .arg(&format!(
+                .arg(format!(
                     "SELECT 1 FROM pg_database WHERE datname = '{}'",
                     name
                 ))
@@ -922,10 +922,7 @@ mod tests {
                 .arg("postgres")
                 .arg("-t")
                 .arg("-c")
-                .arg(&format!(
-                    "SELECT 1 FROM pg_roles WHERE rolname = '{}'",
-                    name
-                ))
+                .arg(format!("SELECT 1 FROM pg_roles WHERE rolname = '{}'", name))
                 .env("PGPASSWORD", password)
                 .output()
                 .expect("Failed to check user existence");
