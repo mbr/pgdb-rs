@@ -2,6 +2,7 @@
 
 ## [unreleased]
 
+- Added a `flake.nix` to allow for easier integration into other projects
 - Added external PostgreSQL database support via `PGDB_TESTS_URL` environment variable.
 - `DbUrl` is now an enum with `Local` and `External` variants for better external database handling.
 - External databases are automatically cleaned up when `DbUrl` is dropped.
