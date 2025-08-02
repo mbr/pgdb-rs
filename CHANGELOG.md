@@ -2,6 +2,14 @@
 
 ## [unreleased]
 
+- Added external PostgreSQL database support via `PGDB_TESTS_URL` environment variable.
+- `DbUrl` is now an enum with `Local` and `External` variants for better external database handling.
+- External databases are automatically cleaned up when `DbUrl` is dropped.
+- `pgdb_cli` now supports external databases when `PGDB_TESTS_URL` is set.
+- Added `ExternalUrlError` enum for proper error handling of external database URLs.
+- Database fixtures now use random IDs instead of incremental counters for better parallel test support.
+- Unified internal and external database creation code paths for consistency.
+- Added public `run_psql_command()` and `create_user_and_database()` functions.
 - Refactored internal connection handling to use `url::Url` instead of separate fields.
 - `PostgresClient::uri()` renamed to `url()` and returns `Url` instead of `String`.
 - Removed `host()` and `port()` methods from `Postgres`. Use `superuser_url()` and extract values from the URL.
