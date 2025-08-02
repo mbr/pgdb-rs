@@ -1,5 +1,5 @@
 {
-  description = "pgdb - A Rust project with PostgreSQL";
+  description = "Run temporary PostgreSQL instances";
 
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-25.05";
