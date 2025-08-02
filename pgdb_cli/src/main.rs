@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-use std::{env, thread, time::Duration};
+use std::{env, path::PathBuf, thread, time::Duration};
 
 use structopt::StructOpt;
 use url::Url;
@@ -23,6 +23,9 @@ struct Opts {
     /// Password for the superuser ("postgres") account, default is to generate randomly.
     #[structopt(short = "S", long)]
     superuser_pw: Option<String>,
+    /// Postgresql binaries path.
+    #[structopt(short, long, env = "PGDB_POSTGRES_BIN")]
+    postgres_bin: Option<PathBuf>,
 }
 
 /// Main entry point, read the `README.md` instead.
@@ -85,6 +88,13 @@ fn main() -> anyhow::Result<()> {
     } else {
         // Original local database logic
         let mut builder = pgdb::Postgres::build();
+
+        if let Some(postgres_bin) = opts.postgres_bin {
+            builder.initdb_binary(postgres_bin.join("initdb"));
+            builder.postgres_binary(postgres_bin.join("postgres"));
+            builder.psql_binary(postgres_bin.join("psql"));
+        }
+
         if let Some(superuser_pw) = opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
         }
