@@ -47,9 +47,6 @@
           buildInputs = with pkgs; [
             toolchain
             postgresql
-            # Add any other development tools you need
-            cargo-watch
-            rust-analyzer
           ];
         };
       });
