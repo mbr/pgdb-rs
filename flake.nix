@@ -34,14 +34,13 @@
         packages.default = platform.buildRustPackage rec {
           pname = "pgdb";
           version = cargoToml.workspace.package.version;
-          
+          nativeBuildInputs = with pkgs; [ postgresql ];
+
           src = pkgs.lib.cleanSource ./.;
           
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
-
-          PGDB_POSTGRES_BIN = "${pkgs.postgresql}/bin";
         };
       });
 }
