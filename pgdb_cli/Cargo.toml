@@ -10,7 +10,7 @@ description = "Command-line application to run a Postgres database"
 readme = "README.md"
 
 [dependencies]
-pgdb = { version = "0.4.0", path = "../pgdb" }
+pgdb = { version = "0.5.0", path = "../pgdb" }
 structopt = "0.3.21"
 anyhow = "1.0.41"
 url = "2.2.2"

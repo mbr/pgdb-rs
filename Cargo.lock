@@ -344,7 +344,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "pgdb"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "hex_fmt",
  "process_guard",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "pgdb_cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "pgdb",

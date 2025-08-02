@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [unreleased]
+## [0.5.0]
 
 - Added a `flake.nix` to allow for easier integration into other projects
 - Added external PostgreSQL database support via `PGDB_TESTS_URL` environment variable.
