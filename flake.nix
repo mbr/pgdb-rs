@@ -2,12 +2,12 @@
   description = "pgdb - A Rust project with PostgreSQL";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "nixpkgs/nixos-25.05";
     fenix = {
-      url = "github:nix-community/fenix";
+      url = "fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-utils.url = "flake-utils";
   };
 
   outputs = { self, nixpkgs, fenix, flake-utils }:
