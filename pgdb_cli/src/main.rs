@@ -24,7 +24,7 @@ struct Opts {
     #[structopt(short = "S", long)]
     superuser_pw: Option<String>,
     /// Postgresql binaries path.
-    #[structopt(short, long, env = "PGDB_POSTGRES_BIN")]
+    #[structopt(short = "b", long, env = "PGDB_POSTGRES_BIN")]
     postgres_bin: Option<PathBuf>,
 }
 
