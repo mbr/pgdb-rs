@@ -104,17 +104,17 @@ impl Drop for DbUrl {
     }
 }
 
-/// Parses the PGDB_TESTS_URL environment variable if set.
+/// Parses the `PGDB_TESTS_URL` environment variable if set.
 ///
-/// The URL must be a complete PostgreSQL URL with superuser credentials.
-/// Returns Ok(Some(url)) if valid, Ok(None) if not set, or Err if invalid.
+/// The URL must be a complete Postgres URL with superuser credentials.
+///
+/// Returns `Ok(Some(url))` if valid, `Ok(None)` if not set, or `Err` if invalid.
 fn parse_external_test_url() -> Result<Option<Url>, Error> {
     match env::var("PGDB_TESTS_URL") {
         Ok(url_str) => {
             let url = Url::parse(&url_str)
                 .map_err(|e| Error::InvalidExternalUrl(ExternalUrlError::ParseError(e)))?;
 
-            // Validate that it's a complete PostgreSQL URL
             if url.scheme() != "postgres" {
                 return Err(Error::InvalidExternalUrl(ExternalUrlError::InvalidScheme));
             }
