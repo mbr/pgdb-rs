@@ -44,3 +44,6 @@ client
     .run_sql(db, "CREATE TABLE foo (id INT PRIMARY KEY);")
     .expect("could not run table creation command");
 ```
+
+Note that `psql` does use the Postgres command line tools (`psql`, `initdb`) over a library, offering a higher range of
+compatibility across Postgres versions.
