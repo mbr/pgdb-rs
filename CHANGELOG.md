@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [unreleased]
+
+- `DbUrl` is now `DbInstance`.
+
 ## [0.5.0]
 
 - Added a `flake.nix` to allow for easier integration into other projects

@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+mod db_instance;
 mod error;
 
 use std::{
@@ -11,133 +12,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub use db_instance::DbInstance;
+pub use error::{Error, ExternalUrlError};
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
 use url::Url;
 
-pub use crate::error::{Error, ExternalUrlError};
-
-/// A database URL keeping a database alive.
-///
-/// Can be either a local database (with a reference to the running instance) or an external
-/// database URL.
-#[derive(Debug)]
-pub enum DbUrl {
-    /// A local database instance that will be kept alive as long as this DbUrl exists.
-    Local {
-        /// A reference to the running Postgres instance where this URL points.
-        _arc: Arc<Postgres>,
-        /// The actual URL.
-        url: Url,
-    },
-    /// An external database URL with cleanup information.
-    External {
-        /// The database URL.
-        url: Url,
-        /// The superuser URL for cleanup operations.
-        superuser_url: Url,
-    },
-}
-
-impl DbUrl {
-    /// Returns the URL as a string.
-    pub fn as_str(&self) -> &str {
-        match self {
-            DbUrl::Local { url, .. } => url.as_str(),
-            DbUrl::External { url, .. } => url.as_str(),
-        }
-    }
-
-    /// Returns the URL.
-    pub fn as_url(&self) -> &Url {
-        match self {
-            DbUrl::Local { url, .. } => url,
-            DbUrl::External { url, .. } => url,
-        }
-    }
-}
-
-impl AsRef<str> for DbUrl {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl Drop for DbUrl {
-    fn drop(&mut self) {
-        if let DbUrl::External { url, superuser_url } = self {
-            // Extract database and user names from the URL
-            let db_name = url.path().trim_start_matches('/');
-            let db_user = url.username();
-
-            // Best effort cleanup - we don't want to panic in drop
-            let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
-
-            // Helper to run cleanup SQL
-            let run_cleanup_sql = |sql: &str| {
-                let username = superuser_url.username();
-                let password = superuser_url.password().unwrap_or_default();
-                let host = superuser_url.host_str().unwrap_or("localhost");
-                let port = superuser_url.port().unwrap_or(5432);
-
-                let _ = process::Command::new(&psql_binary)
-                    .arg("-h")
-                    .arg(host)
-                    .arg("-p")
-                    .arg(port.to_string())
-                    .arg("-U")
-                    .arg(username)
-                    .arg("-d")
-                    .arg("postgres")
-                    .arg("-c")
-                    .arg(sql)
-                    .env("PGPASSWORD", password)
-                    .output();
-            };
-
-            // Drop database first (this will fail if there are active connections)
-            run_cleanup_sql(&format!(
-                "DROP DATABASE IF EXISTS {};",
-                escape_ident(db_name)
-            ));
-
-            // Drop user
-            run_cleanup_sql(&format!("DROP ROLE IF EXISTS {};", escape_ident(db_user)));
-        }
-    }
-}
-
-/// Parses the `PGDB_TESTS_URL` environment variable if set.
-///
-/// The URL must be a complete Postgres URL with superuser credentials.
-///
-/// Returns `Ok(Some(url))` if valid, `Ok(None)` if not set, or `Err` if invalid.
-fn parse_external_test_url() -> Result<Option<Url>, Error> {
-    match env::var("PGDB_TESTS_URL") {
-        Ok(url_str) => {
-            let url = Url::parse(&url_str)
-                .map_err(|e| Error::InvalidExternalUrl(ExternalUrlError::ParseError(e)))?;
-
-            if url.scheme() != "postgres" {
-                return Err(Error::InvalidExternalUrl(ExternalUrlError::InvalidScheme));
-            }
-
-            if url.host_str().is_none() {
-                return Err(Error::InvalidExternalUrl(ExternalUrlError::MissingHost));
-            }
-
-            if url.username().is_empty() {
-                return Err(Error::InvalidExternalUrl(ExternalUrlError::MissingUsername));
-            }
-
-            Ok(Some(url))
-        }
-        Err(_) => Ok(None),
-    }
-}
-
 /// Executes SQL using psql with the given connection parameters.
 pub fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
+    // TODO: Do not use which, allow passing in.
     let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
     let username = superuser_url.username();
     let password = superuser_url.password().unwrap_or_default();
@@ -229,16 +112,16 @@ fn create_fixture_db(superuser_url: &Url) -> Result<Url, Error> {
 /// database will be created for each call, just like with local instances.
 ///
 /// Otherwise, uses a shared database instance if multiple tests are running at the same time (see
-/// [`DbUrl`] for details). The database may be shut down and recreated if the last [`DbUrl`] is
+/// [`DbInstance`] for details). The database may be shut down and recreated if the last [`DbInstance`] is
 /// dropped during testing, e.g. when parallel tests are not spawned quick enough.
 ///
 /// This construction is necessary because `static` variables will not have `Drop` called on them,
 /// without this construction, the spawned Postgres server would not be stopped.
-pub fn db_fixture() -> DbUrl {
+pub fn db_fixture() -> DbInstance {
     // Check for external database URL first
     if let Some(external_url) = parse_external_test_url().expect("invalid PGDB_TESTS_URL") {
         let url = create_fixture_db(&external_url).expect("failed to create external fixture DB");
-        return DbUrl::External {
+        return DbInstance::External {
             url,
             superuser_url: external_url,
         };
@@ -264,7 +147,7 @@ pub fn db_fixture() -> DbUrl {
 
     // Use unified fixture creation for local databases too
     let url = create_fixture_db(pg.superuser_url()).expect("failed to create local fixture DB");
-    DbUrl::Local { _arc: pg, url }
+    DbInstance::Local { _arc: pg, url }
 }
 
 /// Finds an unused port by binding to port 0 and letting the OS assign one.
@@ -708,6 +591,35 @@ fn escape_string(unescaped: &str) -> String {
     quote('\'', unescaped)
 }
 
+/// Parses the `PGDB_TESTS_URL` environment variable if set.
+///
+/// The URL must be a complete Postgres URL with superuser credentials.
+///
+/// Returns `Ok(Some(url))` if valid, `Ok(None)` if not set, or `Err` if invalid.
+pub fn parse_external_test_url() -> Result<Option<Url>, Error> {
+    match env::var("PGDB_TESTS_URL") {
+        Ok(url_str) => {
+            let url = Url::parse(&url_str)
+                .map_err(|e| Error::InvalidExternalUrl(ExternalUrlError::ParseError(e)))?;
+
+            if url.scheme() != "postgres" {
+                return Err(Error::InvalidExternalUrl(ExternalUrlError::InvalidScheme));
+            }
+
+            if url.host_str().is_none() {
+                return Err(Error::InvalidExternalUrl(ExternalUrlError::MissingHost));
+            }
+
+            if url.username().is_empty() {
+                return Err(Error::InvalidExternalUrl(ExternalUrlError::MissingUsername));
+            }
+
+            Ok(Some(url))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Postgres;
@@ -759,7 +671,7 @@ mod tests {
         let db_url2 = crate::db_fixture();
 
         match (&db_url, &db_url2) {
-            (crate::DbUrl::Local { .. }, crate::DbUrl::Local { .. }) => {
+            (crate::DbInstance::Local { .. }, crate::DbInstance::Local { .. }) => {
                 // When using local databases, verify they have fixture prefixes
                 assert!(db_url.as_str().contains("fixture_user_"));
                 assert!(db_url.as_str().contains("fixture_pass_"));
@@ -772,7 +684,7 @@ mod tests {
                 // Verify they have different databases/users
                 assert_ne!(db_url.as_str(), db_url2.as_str());
             }
-            (crate::DbUrl::External { .. }, crate::DbUrl::External { .. }) => {
+            (crate::DbInstance::External { .. }, crate::DbInstance::External { .. }) => {
                 // When using external database, verify separate databases are created
                 assert!(db_url.as_str().contains("fixture_user_"));
                 assert!(db_url.as_str().contains("fixture_pass_"));
@@ -809,7 +721,7 @@ mod tests {
 
             // Extract the database and user names from URL
             match &db_url {
-                crate::DbUrl::External { url, .. } => {
+                crate::DbInstance::External { url, .. } => {
                     let db_name = url.path().trim_start_matches('/').to_string();
                     let db_user = url.username().to_string();
                     (db_name, db_user)
