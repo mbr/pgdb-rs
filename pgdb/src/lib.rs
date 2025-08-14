@@ -6,13 +6,11 @@ mod error;
 use std::{
     env, fs, io, net,
     net::TcpListener,
-    path, process,
-    sync::{Arc, Mutex, Weak},
-    thread,
+    path, process, thread,
     time::{Duration, Instant},
 };
 
-pub use db_instance::DbInstance;
+pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
@@ -100,54 +98,6 @@ fn create_fixture_db(superuser_url: &Url) -> Result<Url, Error> {
     url.set_path(&db_name);
 
     Ok(url)
-}
-
-/// A convenience function for regular applications.
-///
-/// Some applications just need a clean database instance and can afford to share the underlying
-/// database.
-///
-/// If the `PGDB_TESTS_URL` environment variable is set, it will be used as an external database
-/// URL instead of creating a local instance. The URL must include superuser credentials. A new
-/// database will be created for each call, just like with local instances.
-///
-/// Otherwise, uses a shared database instance if multiple tests are running at the same time (see
-/// [`DbInstance`] for details). The database may be shut down and recreated if the last [`DbInstance`] is
-/// dropped during testing, e.g. when parallel tests are not spawned quick enough.
-///
-/// This construction is necessary because `static` variables will not have `Drop` called on them,
-/// without this construction, the spawned Postgres server would not be stopped.
-pub fn db_fixture() -> DbInstance {
-    // Check for external database URL first
-    if let Some(external_url) = parse_external_test_url().expect("invalid PGDB_TESTS_URL") {
-        let url = create_fixture_db(&external_url).expect("failed to create external fixture DB");
-        return DbInstance::External {
-            url,
-            superuser_url: external_url,
-        };
-    }
-
-    static DB: Mutex<Weak<Postgres>> = Mutex::new(Weak::new());
-
-    let pg = {
-        let mut guard = DB.lock().expect("lock poisoned");
-        if let Some(arc) = guard.upgrade() {
-            // We still have an instance we can reuse.
-            arc
-        } else {
-            let arc = Arc::new(
-                Postgres::build()
-                    .start()
-                    .expect("failed to start global postgres DB"),
-            );
-            *guard = Arc::downgrade(&arc);
-            arc
-        }
-    };
-
-    // Use unified fixture creation for local databases too
-    let url = create_fixture_db(pg.superuser_url()).expect("failed to create local fixture DB");
-    DbInstance::Local { _arc: pg, url }
 }
 
 /// Finds an unused port by binding to port 0 and letting the OS assign one.
