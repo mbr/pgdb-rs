@@ -36,8 +36,21 @@
           version = cargoToml.workspace.package.version;
           nativeBuildInputs = with pkgs; [ postgresql ];
 
+          # Tests require spawning a PostgreSQL instance and connecting to it, which is
+          # impossible in the nix sandbox. The sandbox runs builds in an isolated network
+          # namespace where even localhost is unreachable, and Unix sockets cannot be
+          # placed in shared locations.
+          #
+          # See:
+          # - https://discourse.nixos.org/t/spin-up-postgres-for-testing-and-connect-to-it-during-build-test/17804
+          # - https://github.com/NixOS/nix/issues/4584
+          # - https://discourse.nixos.org/t/nix-build-sandbox-networking/45448
+          #
+          # Run tests locally with `cargo test` instead.
+          doCheck = false;
+
           src = pkgs.lib.cleanSource ./.;
-          
+
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
