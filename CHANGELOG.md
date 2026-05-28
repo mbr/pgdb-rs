@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [unreleased]
+## [0.6.0]
 
 - `DbUrl` is now `DbInstance`.
 - Use `pg_isready` instead of TCP probing for startup readiness detection.
