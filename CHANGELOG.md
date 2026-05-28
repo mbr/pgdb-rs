@@ -4,6 +4,7 @@
 
 - `DbUrl` is now `DbInstance`.
 - Use `pg_isready` instead of TCP probing for startup readiness detection.
+- Added `PostgresBuilder::pg_isready_binary()` method to customize the binary path.
 
 ## [0.5.0]
 
