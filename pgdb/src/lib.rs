@@ -4,7 +4,7 @@ mod db_instance;
 mod error;
 
 use std::{
-    env, fs, io, net,
+    env, fs, io,
     net::TcpListener,
     path, process, thread,
     time::{Duration, Instant},
@@ -160,6 +160,8 @@ pub struct PostgresBuilder {
     postgres_binary: Option<path::PathBuf>,
     /// Path to `initdb` binary.
     initdb_binary: Option<path::PathBuf>,
+    /// Path to `pg_isready` binary.
+    pg_isready_binary: Option<path::PathBuf>,
     /// Path to `psql` binary.
     psql_binary: Option<path::PathBuf>,
     /// How long to wait between startup probe attempts.
@@ -180,6 +182,7 @@ impl Postgres {
             superuser_pw: generate_random_string(),
             postgres_binary: None,
             initdb_binary: None,
+            pg_isready_binary: None,
             psql_binary: None,
             probe_delay: Duration::from_millis(100),
             startup_timeout: Duration::from_secs(10),
@@ -345,6 +348,13 @@ impl PostgresBuilder {
         self
     }
 
+    /// Sets the location of the `pg_isready` binary.
+    #[inline]
+    pub fn pg_isready_binary<T: Into<path::PathBuf>>(&mut self, pg_isready_binary: T) -> &mut Self {
+        self.pg_isready_binary = Some(pg_isready_binary.into());
+        self
+    }
+
     /// Sets the bind address.
     #[inline]
     pub fn host(&mut self, host: String) -> &mut Self {
@@ -403,7 +413,7 @@ impl PostgresBuilder {
     /// Starts the Postgres server.
     ///
     /// Postgres will start using a newly created temporary directory as its data dir. The function
-    /// will only return once a TCP connection to postgres has been made successfully.
+    /// will only return once `pg_isready` reports the server is accepting connections.
     pub fn start(&self) -> Result<Postgres, Error> {
         let port = self
             .port
@@ -419,6 +429,11 @@ impl PostgresBuilder {
             .clone()
             .map(Ok)
             .unwrap_or_else(|| which::which("initdb").map_err(Error::FindInitdb))?;
+        let pg_isready_binary = self
+            .pg_isready_binary
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(|| which::which("pg_isready").map_err(Error::FindPgIsready))?;
         let psql_binary = self
             .psql_binary
             .clone()
@@ -473,19 +488,24 @@ impl PostgresBuilder {
         let instance = ProcessGuard::spawn_graceful(&mut postgres_command, Duration::from_secs(5))
             .map_err(Error::LaunchPostgres)?;
 
-        // Wait for the server to come up.
-        let socket_addr = format!("{}:{}", self.host, port);
+        // Wait for the server to become ready to accept connections.
         let started = Instant::now();
         loop {
-            match net::TcpStream::connect(socket_addr.as_str()) {
-                Ok(_) => break,
-                Err(_) => {
-                    let now = Instant::now();
+            let status = process::Command::new(&pg_isready_binary)
+                .arg("-h")
+                .arg(&self.host)
+                .arg("-p")
+                .arg(port.to_string())
+                .stdout(process::Stdio::null())
+                .stderr(process::Stdio::null())
+                .status();
 
-                    if now.duration_since(started) >= self.startup_timeout {
+            match status {
+                Ok(exit_status) if exit_status.success() => break,
+                _ => {
+                    if started.elapsed() >= self.startup_timeout {
                         return Err(Error::StartupTimeout);
                     }
-
                     thread::sleep(self.probe_delay);
                 }
             }

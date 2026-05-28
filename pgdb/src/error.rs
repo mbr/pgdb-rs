@@ -14,6 +14,9 @@ pub enum Error {
     /// Failed to find the `initdb` binary.
     #[error("could not find `initdb` binary")]
     FindInitdb(which::Error),
+    /// Failed to find the `pg_isready` binary.
+    #[error("could not find `pg_isready` binary")]
+    FindPgIsready(which::Error),
     /// Failed to find the `postgres` binary.
     #[error("could not find `psql` binary")]
     FindPsql(which::Error),
@@ -32,8 +35,8 @@ pub enum Error {
     /// Postgres could not be launched.
     #[error("failed to launch `postgres`")]
     LaunchPostgres(io::Error),
-    /// Postgres was launched but failed to bring up a TCP-connection accepting socket in time.
-    #[error("timeout probing tcp socket")]
+    /// Postgres was launched but did not become ready in time.
+    #[error("postgres did not become ready in time")]
     StartupTimeout,
     /// `psql` could not be launched.
     #[error("failed to run `psql`")]
