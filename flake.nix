@@ -2,7 +2,7 @@
   description = "Run temporary PostgreSQL instances";
 
   inputs = {
-    nixpkgs.url = "nixpkgs/nixos-25.05";
+    nixpkgs.url = "nixpkgs/nixos-26.05";
     fenix = {
       url = "fenix";
       inputs.nixpkgs.follows = "nixpkgs";
