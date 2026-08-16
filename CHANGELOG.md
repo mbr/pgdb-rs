@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [Unreleased]
+
+- `pgdb` can now wrap commands and scripts in a temporary database environment.
+
 ## [0.6.0]
 
 - `DbUrl` is now `DbInstance`.
