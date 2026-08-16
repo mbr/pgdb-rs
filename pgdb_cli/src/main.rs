@@ -9,6 +9,10 @@ use std::{
     time::Duration,
 };
 
+use signal_hook::{
+    consts::{SIGHUP, SIGINT, SIGTERM},
+    iterator::Signals,
+};
 use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
 
@@ -88,7 +92,8 @@ fn run_command(opts: &Opts, user_url: &Url) -> anyhow::Result<ExitStatus> {
         .split_first()
         .expect("command must contain a program");
 
-    Ok(process::Command::new(program)
+    let mut signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
+    let mut child = process::Command::new(program)
         .args(arguments)
         .env("DATABASE_URL", user_url.as_str())
         .env("PGHOST", user_url.host_str().expect("URL must have a host"))
@@ -96,7 +101,25 @@ fn run_command(opts: &Opts, user_url: &Url) -> anyhow::Result<ExitStatus> {
         .env("PGUSER", &opts.user)
         .env("PGPASSWORD", &opts.password)
         .env("PGDATABASE", &opts.db)
-        .status()?)
+        .spawn()?;
+
+    let child_pid = child.id() as libc::pid_t;
+    let signal_handle = signals.handle();
+    let signal_forwarder = thread::spawn(move || {
+        for signal in signals.forever() {
+            // SAFETY: The PID comes from the child and `Signals` only yields registered signals.
+            unsafe {
+                libc::kill(child_pid, signal);
+            }
+        }
+    });
+
+    let status = child.wait();
+    signal_handle.close();
+    signal_forwarder
+        .join()
+        .expect("signal forwarding thread must not panic");
+    Ok(status?)
 }
 
 /// Exits with the status returned by a wrapped command.
