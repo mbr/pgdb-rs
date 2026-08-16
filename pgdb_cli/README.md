@@ -12,6 +12,8 @@ cargo install pgdb_cli
 
 ## Usage
 
+### Interactive mode
+
 Start a temporary PostgreSQL instance:
 
 ```bash
@@ -25,6 +27,31 @@ This will:
 - Create a database `dev` owned by the user
 - Display connection information
 - Keep running until interrupted (Ctrl+C)
+
+### Command mode
+
+Run a command with a temporary database:
+
+```bash
+pgdb bash                     # Open a shell
+pgdb psql                     # Open a PostgreSQL console
+pgdb cargo sqlx migrate run   # Run a development task
+```
+
+In command mode, `pgdb` selects an available port, provides the configured database through
+`DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`, and removes the
+database after the command exits. Options must precede the command; arguments after the command are
+passed through unchanged.
+
+Scripts can use `pgdb` as a shebang interpreter by selecting a POSIX shell as the wrapped command:
+
+```sh
+#!/usr/bin/env -S pgdb /bin/sh
+set -eu
+
+cargo sqlx migrate run
+cargo sqlx prepare
+```
 
 ## External Database Support
 
