@@ -1,12 +1,20 @@
 #![doc = include_str!("../README.md")]
 
-use std::{env, thread, time::Duration};
+use std::{
+    env,
+    ffi::OsString,
+    os::unix::process::ExitStatusExt,
+    process::{self, ExitStatus},
+    thread,
+    time::Duration,
+};
 
-use structopt::StructOpt;
+use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
 
 /// Create a temporary postgres database with one user owning a single DB.
 #[derive(Debug, StructOpt)]
+#[structopt(setting = AppSettings::TrailingVarArg)]
 struct Opts {
     /// Database port to use.
     #[structopt(short, long)]
@@ -23,6 +31,9 @@ struct Opts {
     /// Password for the superuser ("postgres") account, default is to generate randomly.
     #[structopt(short = "S", long)]
     superuser_pw: Option<String>,
+    /// Command to run with the temporary database.
+    #[structopt(name = "command", parse(from_os_str))]
+    command: Vec<OsString>,
 }
 
 /// Runs an action while the configured database is available.
@@ -70,9 +81,42 @@ fn with_database<T>(
     }
 }
 
+/// Runs a command with connection details for the configured database.
+fn run_command(opts: &Opts, user_url: &Url) -> anyhow::Result<ExitStatus> {
+    let (program, arguments) = opts
+        .command
+        .split_first()
+        .expect("command must contain a program");
+
+    Ok(process::Command::new(program)
+        .args(arguments)
+        .env("DATABASE_URL", user_url.as_str())
+        .env("PGHOST", user_url.host_str().expect("URL must have a host"))
+        .env("PGPORT", user_url.port().unwrap_or(5432).to_string())
+        .env("PGUSER", &opts.user)
+        .env("PGPASSWORD", &opts.password)
+        .env("PGDATABASE", &opts.db)
+        .status()?)
+}
+
+/// Exits with the status returned by a wrapped command.
+fn exit_with_status(status: ExitStatus) -> ! {
+    let code = status
+        .code()
+        .unwrap_or_else(|| 128 + status.signal().expect("exit status must have a signal"));
+    process::exit(code)
+}
+
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
+
+    if !opts.command.is_empty() {
+        let status = with_database(&opts, opts.port, |_, user_url, _| {
+            run_command(&opts, user_url)
+        })?;
+        exit_with_status(status);
+    }
 
     with_database(
         &opts,
