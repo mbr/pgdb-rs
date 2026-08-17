@@ -6,13 +6,13 @@
 - Local PostgreSQL instances now use isolated Unix sockets by default. Use `PostgresBuilder::tcp()`
   or `pgdb --tcp` to use TCP.
 
-## [0.6.0]
+## [0.6.0] - 2026-05-28
 
 - `DbUrl` is now `DbInstance`.
 - Use `pg_isready` instead of TCP probing for startup readiness detection.
 - Added `PostgresBuilder::pg_isready_binary()` method to customize the binary path.
 
-## [0.5.0]
+## [0.5.0] - 2025-08-02
 
 - Added a `flake.nix` to allow for easier integration into other projects
 - Added external PostgreSQL database support via `PGDB_TESTS_URL` environment variable.
@@ -29,51 +29,32 @@
 - Removed `username()` and `password()` methods from `PostgresClient`. Use `client_url()` and extract values from the
   URL.
 
-## [0.4.0]
+## [0.4.0] - 2025-07-04
 
 - The library now uses a random, unused port when launching postgres instances. CLI still defaults to `15432`.
 - `PostgresBuilder` no longer derives `Default` to avoid accidentally building nonsensical builders with no root pw.
 - Added `db_fixture` function for easier database creation and sharing.
 
-## [0.3.0]
-
-### Changed
+## [0.3.0] - 2024-04-09
 
 - Sequential ports will now be assigned if multiple databases are created from one process.
 
-## [0.2.0]
+## [0.2.0] - 2024-04-01
 
-### Added
+- Added the `--superuser-pw` option to set the `postgres` user's password.
+- Changed the `startup_timeout` and `probe_delay` builder methods to take `&mut self`.
+- Fixed the `--port` option so it changes the port.
 
-- The `--superuser-pw` option has been added to allow setting the "postgres" user's password.
+## [0.1.2] - 2021-06-15
 
-### Changed
-
-- `startup_timeout` and `probe_delay` builder method signatures brought in line with the rest, taking a `&mut` receiver.
-
-### Fixed
-
-- The `--port` option now actually changes the port.
-
-## [0.1.2] 2021-06-15
-
-### Added
-
-- New method `PostgresClient::load_sql`.
+- Added `PostgresClient::load_sql`.
 
 ## [0.1.1] - 2021-06-12
 
-### Added
-
-- CLI tool `pgdb` that allows running Postgres instances from the command line.
-- Can now retrieve `host`, `port` and similar information from `Postgres`/`PostgresClient`.
-
-### Changed
-
-- Repository is now multi-crate.
+- Added the `pgdb` CLI for running PostgreSQL instances from the command line.
+- Added access to `host`, `port`, and similar information from `Postgres` and `PostgresClient`.
+- Converted the repository into a multi-crate project.
 
 ## [0.1.0] - 2021-06-12
-
-### Added
 
 - Initial release of `pgdb`.
