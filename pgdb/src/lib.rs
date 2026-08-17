@@ -15,7 +15,6 @@ pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal};
-use rand::{rngs::OsRng, Rng};
 use url::Url;
 
 /// Default PostgreSQL port and Unix socket suffix.
@@ -589,7 +588,7 @@ impl PostgresBuilder {
 
 /// Generates a random hex string 32 characters long.
 fn generate_random_string() -> String {
-    let raw: [u8; 16] = OsRng.gen();
+    let raw: [u8; 16] = rand::random();
     format!("{:x}", hex_fmt::HexFmt(&raw))
 }
 

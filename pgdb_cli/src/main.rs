@@ -8,37 +8,37 @@ use std::{
     thread,
 };
 
+use clap::Parser;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
 };
-use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
 
 /// Create a temporary postgres database with one user owning a single DB.
-#[derive(Debug, StructOpt)]
-#[structopt(setting = AppSettings::TrailingVarArg)]
+#[derive(Debug, Parser)]
+#[command(trailing_var_arg = true)]
 struct Opts {
     /// Use TCP instead of a Unix socket.
-    #[structopt(short, long)]
+    #[arg(short, long)]
     tcp: bool,
     /// TCP port to use; implies --tcp.
-    #[structopt(short, long)]
+    #[arg(short, long)]
     port: Option<u16>,
     /// Username for regular database user.
-    #[structopt(short, long, default_value = "dev")]
+    #[arg(short, long, default_value = "dev")]
     user: String,
     /// Password for regular database user.
-    #[structopt(short = "P", long, default_value = "dev")]
+    #[arg(short = 'P', long, default_value = "dev")]
     password: String,
     /// Name of regular user-owned database.
-    #[structopt(short, long, default_value = "dev")]
+    #[arg(short, long, default_value = "dev")]
     db: String,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
-    #[structopt(short = "S", long)]
+    #[arg(short = 'S', long)]
     superuser_pw: Option<String>,
     /// Command to run with the temporary database.
-    #[structopt(name = "command", parse(from_os_str))]
+    #[arg(name = "command")]
     command: Vec<OsString>,
 }
 
@@ -139,7 +139,7 @@ fn exit_with_status(status: ExitStatus) -> ! {
 
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
 
     if !opts.command.is_empty() {

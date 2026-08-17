@@ -10,13 +10,13 @@ description = "Command-line application to run a Postgres database"
 readme = "README.md"
 
 [dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive"] }
+libc = "0.2.189"
 pgdb = { version = "0.6.0", path = "../pgdb" }
-structopt = "0.3.21"
-anyhow = "1.0.41"
-url = "2.2.2"
-tempfile = "3.2.0"
-libc = "0.2"
-signal-hook = "0.3"
+signal-hook = "0.4.4"
+tempfile = { workspace = true }
+url = { workspace = true }
 
 [[bin]]
 name = "pgdb"

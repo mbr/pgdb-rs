@@ -11,10 +11,10 @@ readme = "README.md"
 
 [dependencies]
 hex_fmt = "0.3.0"
-percent-encoding = "2.3.1"
-rand = "0.8.3"
-tempfile = "3.2.0"
-thiserror = "1.0.25"
-which = "4.1.0"
+percent-encoding = "2.3.2"
 process_guard = "0.3.0"
-url = "2.5.0"
+rand = "0.10.2"
+tempfile = { workspace = true }
+thiserror = "2.0.20"
+url = { workspace = true }
+which = "8.0.5"

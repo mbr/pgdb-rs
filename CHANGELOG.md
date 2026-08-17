@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Replaced deprecated `structopt` usage with `clap`.
 - Local PostgreSQL servers now use dedicated process groups and request fast shutdown before bounded forceful cleanup.
 - The CLI now handles ordinary termination signals through normal cleanup in interactive mode.
 - `pgdb` can now wrap commands and scripts in a temporary database environment.

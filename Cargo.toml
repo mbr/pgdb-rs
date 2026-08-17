@@ -1,6 +1,10 @@
 [workspace]
 members = ["pgdb", "pgdb_cli"]
 
+[workspace.dependencies]
+tempfile = "3.27.0"
+url = "2.5.8"
+
 [workspace.package]
 version = "0.6.0"
 authors = ["Marc Brinkmann <git@marcbrinkmann.de>"]
