@@ -14,7 +14,7 @@ use std::{
 pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
-use process_guard::ProcessGuard;
+use process_guard::{ProcessGuard, ShutdownPolicy, Signal};
 use rand::{rngs::OsRng, Rng};
 use url::Url;
 
@@ -525,8 +525,14 @@ impl PostgresBuilder {
             postgres_command.arg("-c").arg("listen_addresses=");
         }
 
-        let instance = ProcessGuard::spawn_graceful(&mut postgres_command, Duration::from_secs(5))
-            .map_err(Error::LaunchPostgres)?;
+        let instance = ProcessGuard::spawn_process_group(
+            &mut postgres_command,
+            ShutdownPolicy::Graceful {
+                signal: Signal::SIGINT,
+                grace_time: Duration::from_secs(5),
+            },
+        )
+        .map_err(Error::LaunchPostgres)?;
 
         // Wait for the server to become ready to accept connections.
         let started = Instant::now();

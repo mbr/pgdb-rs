@@ -6,7 +6,6 @@ use std::{
     os::unix::process::ExitStatusExt,
     process::{self, ExitStatus},
     thread,
-    time::Duration,
 };
 
 use signal_hook::{
@@ -93,7 +92,7 @@ fn with_database<T>(
 }
 
 /// Runs a command with connection details for the configured database.
-fn run_command(opts: &Opts, user_url: &Url) -> anyhow::Result<ExitStatus> {
+fn run_command(opts: &Opts, user_url: &Url, mut signals: Signals) -> anyhow::Result<ExitStatus> {
     let (program, arguments) = opts
         .command
         .split_first()
@@ -101,7 +100,6 @@ fn run_command(opts: &Opts, user_url: &Url) -> anyhow::Result<ExitStatus> {
 
     let host = pgdb::connection_host(user_url).expect("URL must have a host");
     let port = pgdb::connection_port(user_url).unwrap_or(5432);
-    let mut signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
     let mut child = process::Command::new(program)
         .args(arguments)
         .env("DATABASE_URL", user_url.as_str())
@@ -142,12 +140,16 @@ fn exit_with_status(status: ExitStatus) -> ! {
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
+    let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
 
     if !opts.command.is_empty() {
-        let status = with_database(&opts, |_, user_url, _| run_command(&opts, user_url))?;
+        let status = with_database(&opts, |_, user_url, _| {
+            run_command(&opts, user_url, signals)
+        })?;
         exit_with_status(status);
     }
 
+    let mut signals = signals;
     with_database(&opts, |superuser_url, user_url, external| {
         println!();
         if external {
@@ -175,8 +177,7 @@ fn main() -> anyhow::Result<()> {
             println!("\n(Using external PostgreSQL instance from PGDB_TESTS_URL)");
         }
 
-        loop {
-            thread::sleep(Duration::from_secs(60));
-        }
+        let _ = signals.forever().next();
+        Ok(())
     })
 }

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Local PostgreSQL servers now use dedicated process groups and request fast shutdown before bounded forceful cleanup.
+- The CLI now handles ordinary termination signals through normal cleanup in interactive mode.
 - `pgdb` can now wrap commands and scripts in a temporary database environment.
 - Local PostgreSQL instances now use isolated Unix sockets by default. Use `PostgresBuilder::tcp()`
   or `pgdb --tcp` to use TCP.
