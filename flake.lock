@@ -8,11 +8,11 @@
         "rust-analyzer-src": "rust-analyzer-src"
       },
       "locked": {
-        "lastModified": 1786862861,
-        "narHash": "sha256-mo8fjp9i/Kl7rl5NnOCwnKCDAeynSV0vBoEeE//3JBE=",
+        "lastModified": 1786900242,
+        "narHash": "sha256-52Fj2HDnEeW13PAjZJiSuTqzDbCBKu4841O6WLJKcig=",
         "owner": "nix-community",
         "repo": "fenix",
-        "rev": "702015af79108e50a1d6a3a64516a88e62477ffa",
+        "rev": "27a7186cfd33b512c0bfe5e60c385cb5938323fc",
         "type": "github"
       },
       "original": {
@@ -39,11 +39,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1786711500,
-        "narHash": "sha256-mB6w7h+UsvxLf3PY6U3hSDVWCfmn2Q6VtSw5JugbeY0=",
-        "rev": "02e08985a27c65ffd33d434eeb2e660a2e4dc84d",
+        "lastModified": 1786943417,
+        "narHash": "sha256-eVWN0FVPJSK7wgm9SxzFwd6FNRWoJN2oAe3M6MbpZ8U=",
+        "rev": "0dd31db7e6dbf9ce05697c4545f6fe01accec994",
         "type": "tarball",
-        "url": "https://releases.nixos.org/nixos/26.05/nixos-26.05.7675.02e08985a27c/nixexprs.tar.xz"
+        "url": "https://releases.nixos.org/nixos/26.05/nixos-26.05.7813.0dd31db7e6db/nixexprs.tar.xz"
       },
       "original": {
         "id": "nixpkgs",

@@ -1,8 +1,10 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
 
-# Format code with import nesting and sorting
-# Using unstable cargo fmt options (allowed on command line even if not in config)
-cargo fmt -- \
-    --config imports_granularity=Crate \
-    --config group_imports=StdExternalCrate
+#: Formats the source.
+#: Uses --config to override rustfmt settings without a nightly toolchain.
+#: As a little hack, supports `--check`.
+
+cd "$(dirname "$0")"
+
+cargo fmt -- --config group_imports=StdExternalCrate --config imports_granularity=Crate "$@"
+nixfmt "$@" flake.nix
