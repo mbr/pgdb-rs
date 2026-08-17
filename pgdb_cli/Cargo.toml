@@ -13,7 +13,7 @@ readme = "README.md"
 anyhow = "1.0.104"
 clap = { version = "4.6.6", features = ["derive"] }
 libc = "0.2.189"
-pgdb = { version = "0.6.0", path = "../pgdb" }
+pgdb = { version = "0.7.0", path = "../pgdb" }
 signal-hook = "0.4.4"
 tempfile = { workspace = true }
 url = { workspace = true }

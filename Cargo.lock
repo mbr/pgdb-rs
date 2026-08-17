@@ -368,7 +368,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pgdb"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "hex_fmt",
  "percent-encoding",
@@ -382,7 +382,7 @@ dependencies = [
 
 [[package]]
 name = "pgdb_cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",

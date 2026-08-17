@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased]
+## [0.7.0] - 2026-08-18
 
 - Replaced deprecated `structopt` usage with `clap`.
 - Local PostgreSQL servers now use dedicated process groups and request fast shutdown before bounded forceful cleanup.
