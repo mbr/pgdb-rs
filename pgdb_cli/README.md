@@ -22,11 +22,14 @@ pgdb
 
 This will:
 
-- Start a PostgreSQL server on port 15432 (by default), with a data directory in your temporary directory
+- Start PostgreSQL in a private temporary directory using a Unix socket
 - Create a user `dev` with password `dev`
 - Create a database `dev` owned by the user
 - Display connection information
 - Keep running until interrupted (Ctrl+C)
+
+Pass `-t` or `--tcp` to use TCP instead. `--port` selects a TCP port and implies `--tcp`.
+The generated socket URLs work with `psql` and SQLx.
 
 ### Command mode
 
@@ -38,10 +41,9 @@ pgdb psql                     # Open a PostgreSQL console
 pgdb cargo sqlx migrate run   # Run a development task
 ```
 
-In command mode, `pgdb` selects an available port, provides the configured database through
-`DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`, and removes the
-database after the command exits. Options must precede the command; arguments after the command are
-passed through unchanged.
+In command mode, `pgdb` provides the configured database through `DATABASE_URL`, `PGHOST`,
+`PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`, and removes the database after the command
+exits. Options must precede the command; arguments after the command are passed through unchanged.
 
 Scripts can use `pgdb` as a shebang interpreter by selecting a POSIX shell as the wrapped command:
 

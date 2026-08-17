@@ -13,6 +13,9 @@ let db_url = pgdb::db_fixture();
 
 Note that databases are not cleaned up until the testing process exits.
 
+Local instances use isolated Unix sockets by default, avoiding TCP port allocation. Call
+`PostgresBuilder::tcp()` or configure a host or port to use TCP instead.
+
 Requires that regular Postgres database utilities like `postgres` and `initdb` are available on the path at runtime.
 
 ## Detailed usage
