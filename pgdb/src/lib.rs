@@ -4,6 +4,7 @@ mod db_instance;
 mod error;
 
 use std::{
+    borrow::Cow,
     env, fs, io,
     net::TcpListener,
     path, process, thread,
@@ -12,9 +13,28 @@ use std::{
 
 pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
+use percent_encoding::percent_decode_str;
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
 use url::Url;
+
+/// Returns the connection host represented by a PostgreSQL URL.
+pub fn connection_host(url: &Url) -> Option<Cow<'_, str>> {
+    if let Some((_, host)) = url.query_pairs().find(|(key, _)| key == "host") {
+        return Some(host);
+    }
+
+    url.host_str()
+        .map(|host| percent_decode_str(host).decode_utf8_lossy())
+}
+
+/// Returns the connection port represented by a PostgreSQL URL.
+pub fn connection_port(url: &Url) -> Option<u16> {
+    url.query_pairs()
+        .find(|(key, _)| key == "port")
+        .and_then(|(_, port)| port.parse().ok())
+        .or_else(|| url.port())
+}
 
 /// Executes SQL using psql with the given connection parameters.
 pub fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
@@ -22,12 +42,12 @@ pub fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Resul
     let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
     let username = superuser_url.username();
     let password = superuser_url.password().unwrap_or_default();
-    let host = superuser_url.host_str().expect("URL must have a host");
-    let port = superuser_url.port().unwrap_or(5432);
+    let host = connection_host(superuser_url).expect("URL must have a host");
+    let port = connection_port(superuser_url).unwrap_or(5432);
 
     let status = process::Command::new(&psql_binary)
         .arg("-h")
-        .arg(host)
+        .arg(host.as_ref())
         .arg("-p")
         .arg(port.to_string())
         .arg("-U")
@@ -231,14 +251,11 @@ impl<'a> PostgresClient<'a> {
         let username = self.client_url.username();
         let password = self.client_url.password().unwrap_or_default();
 
-        let host = self
-            .client_url
-            .host_str()
-            .expect("Client URL must have a host");
-        let port = self.client_url.port().expect("Client URL must have a port");
+        let host = connection_host(&self.client_url).expect("Client URL must have a host");
+        let port = connection_port(&self.client_url).expect("Client URL must have a port");
 
         cmd.arg("-h")
-            .arg(host)
+            .arg(host.as_ref())
             .arg("-p")
             .arg(port.to_string())
             .arg("-U")
@@ -592,7 +609,18 @@ pub fn parse_external_test_url() -> Result<Option<Url>, Error> {
 
 #[cfg(test)]
 mod tests {
+    use url::Url;
+
     use super::Postgres;
+
+    #[test]
+    fn connection_parameters_decode_socket_urls() {
+        let url =
+            Url::parse("postgres://dev@%2Ftmp%2Fpgdb:5432/dev").expect("socket URL must be valid");
+
+        assert_eq!(super::connection_host(&url).as_deref(), Some("/tmp/pgdb"));
+        assert_eq!(super::connection_port(&url), Some(5432));
+    }
 
     #[test]
     fn can_change_superuser_pw() {

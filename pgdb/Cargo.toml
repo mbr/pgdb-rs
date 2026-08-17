@@ -11,6 +11,7 @@ readme = "README.md"
 
 [dependencies]
 hex_fmt = "0.3.0"
+percent-encoding = "2.3.1"
 rand = "0.8.3"
 tempfile = "3.2.0"
 thiserror = "1.0.25"

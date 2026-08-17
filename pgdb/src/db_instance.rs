@@ -74,13 +74,13 @@ impl Drop for DbInstance {
                 let username = superuser_url.username();
                 let password = superuser_url.password().unwrap_or_default();
 
-                // TODO: Should not assume defaults here, look up where `DbUrl` is actually built.
-                let host = superuser_url.host_str().unwrap_or("localhost");
-                let port = superuser_url.port().unwrap_or(5432);
+                let host =
+                    crate::connection_host(superuser_url).unwrap_or_else(|| "localhost".into());
+                let port = crate::connection_port(superuser_url).unwrap_or(5432);
 
                 let _ = process::Command::new(&psql_binary)
                     .arg("-h")
-                    .arg(host)
+                    .arg(host.as_ref())
                     .arg("-p")
                     .arg(port.to_string())
                     .arg("-U")

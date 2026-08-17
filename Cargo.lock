@@ -347,6 +347,7 @@ name = "pgdb"
 version = "0.6.0"
 dependencies = [
  "hex_fmt",
+ "percent-encoding",
  "process_guard",
  "rand",
  "tempfile",
