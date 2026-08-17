@@ -117,6 +117,29 @@ Or add the library to a Rust project:
 cargo add --dev pgdb
 ```
 
-PostgreSQL executables such as `postgres`, `initdb`, `pg_isready`, and `psql` must be available in `PATH`. The repository's Nix flake exports `pgdb` for use in development shells; add PostgreSQL from your package set alongside it.
+With Nix flakes, add `pgdb` as an input and include it alongside PostgreSQL in the development shell:
+
+```nix
+inputs.pgdb = {
+  url = "github:mbr/pgdb-rs";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+
+# In the outputs function, with `pgdb` and `system` in scope:
+devShells.default = pkgs.mkShell {
+  nativeBuildInputs = [
+    pgdb.packages.${system}.default
+    pkgs.postgresql
+  ];
+};
+```
+
+To try `pgdb` directly in a temporary Nix shell:
+
+```sh
+nix shell github:mbr/pgdb-rs nixpkgs#postgresql
+```
+
+PostgreSQL executables such as `postgres`, `initdb`, `pg_isready`, and `psql` must be available in `PATH`.
 
 See the [`pgdb` library documentation](./pgdb/README.md) and [`pgdb_cli` documentation](./pgdb_cli/README.md) for the complete APIs and command-line options.
