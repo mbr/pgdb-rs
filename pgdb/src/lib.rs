@@ -13,10 +13,13 @@ use std::{
 
 pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
-use percent_encoding::percent_decode_str;
+use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::ProcessGuard;
 use rand::{rngs::OsRng, Rng};
 use url::Url;
+
+/// Default PostgreSQL port and Unix socket suffix.
+const DEFAULT_POSTGRES_PORT: u16 = 5432;
 
 /// Returns the connection host represented by a PostgreSQL URL.
 pub fn connection_host(url: &Url) -> Option<Cow<'_, str>> {
@@ -166,12 +169,14 @@ pub struct PostgresClient<'a> {
 pub struct PostgresBuilder {
     /// Data directory.
     data_dir: Option<path::PathBuf>,
-    /// Listening port.
+    /// TCP listening port.
     ///
     /// If not set, [`find_unused_port`] will be used to determine the port.
     port: Option<u16>,
-    /// Bind host.
+    /// TCP bind host.
     host: String,
+    /// Whether to connect over TCP.
+    tcp: bool,
     /// Name of the superuser.
     superuser: String,
     /// Password for the superuser.
@@ -198,6 +203,7 @@ impl Postgres {
             data_dir: None,
             port: None,
             host: "127.0.0.1".to_string(),
+            tcp: false,
             superuser: "postgres".to_string(),
             superuser_pw: generate_random_string(),
             postgres_binary: None,
@@ -372,14 +378,15 @@ impl PostgresBuilder {
         self
     }
 
-    /// Sets the bind address.
+    /// Sets the TCP bind address and enables TCP connections.
     #[inline]
     pub fn host(&mut self, host: String) -> &mut Self {
         self.host = host;
+        self.tcp = true;
         self
     }
 
-    /// Sets listening port.
+    /// Sets the TCP listening port and enables TCP connections.
     ///
     /// If no port is set, the builder will attempt to find an unused port through binding to port `0`. This
     /// is somewhat racy, but the only recourse, since Postgres does not support binding to port
@@ -387,6 +394,14 @@ impl PostgresBuilder {
     #[inline]
     pub fn port(&mut self, port: u16) -> &mut Self {
         self.port = Some(port);
+        self.tcp = true;
+        self
+    }
+
+    /// Enables TCP connections on an automatically selected port.
+    #[inline]
+    pub fn tcp(&mut self) -> &mut Self {
+        self.tcp = true;
         self
     }
 
@@ -432,9 +447,12 @@ impl PostgresBuilder {
     /// Postgres will start using a newly created temporary directory as its data dir. The function
     /// will only return once `pg_isready` reports the server is accepting connections.
     pub fn start(&self) -> Result<Postgres, Error> {
-        let port = self
-            .port
-            .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"));
+        let port = if self.tcp {
+            self.port
+                .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"))
+        } else {
+            DEFAULT_POSTGRES_PORT
+        };
 
         let postgres_binary = self
             .postgres_binary
@@ -501,6 +519,11 @@ impl PostgresBuilder {
             .arg(port.to_string())
             .arg("-k")
             .arg(tmp_dir.path());
+        if self.tcp {
+            postgres_command.arg("-h").arg(&self.host);
+        } else {
+            postgres_command.arg("-c").arg("listen_addresses=");
+        }
 
         let instance = ProcessGuard::spawn_graceful(&mut postgres_command, Duration::from_secs(5))
             .map_err(Error::LaunchPostgres)?;
@@ -508,9 +531,14 @@ impl PostgresBuilder {
         // Wait for the server to become ready to accept connections.
         let started = Instant::now();
         loop {
-            let status = process::Command::new(&pg_isready_binary)
-                .arg("-h")
-                .arg(&self.host)
+            let mut pg_isready_command = process::Command::new(&pg_isready_binary);
+            pg_isready_command.arg("-h");
+            if self.tcp {
+                pg_isready_command.arg(&self.host);
+            } else {
+                pg_isready_command.arg(tmp_dir.path());
+            }
+            let status = pg_isready_command
                 .arg("-p")
                 .arg(port.to_string())
                 .stdout(process::Stdio::null())
@@ -528,11 +556,21 @@ impl PostgresBuilder {
             }
         }
 
-        let superuser_url = Url::parse(&format!(
-            "postgres://{}:{}@{}:{}",
-            self.superuser, self.superuser_pw, self.host, port
-        ))
-        .expect("Failed to construct base URL");
+        let mut superuser_url = if self.tcp {
+            Url::parse(&format!("postgres://{}:{}", self.host, port))
+                .expect("Failed to construct TCP URL")
+        } else {
+            let socket_dir = tmp_dir.path().to_string_lossy();
+            let encoded_socket_dir = utf8_percent_encode(&socket_dir, NON_ALPHANUMERIC).to_string();
+            Url::parse(&format!("postgres://{encoded_socket_dir}:{port}"))
+                .expect("Failed to construct Unix socket URL")
+        };
+        superuser_url
+            .set_username(&self.superuser)
+            .expect("Failed to set superuser username");
+        superuser_url
+            .set_password(Some(&self.superuser_pw))
+            .expect("Failed to set superuser password");
 
         Ok(Postgres {
             superuser_url,
@@ -638,29 +676,28 @@ mod tests {
     }
 
     #[test]
-    fn instances_use_different_port_by_default() {
+    fn instances_support_isolated_sockets_and_tcp() {
         let a = Postgres::build()
             .start()
             .expect("could not build postgres database");
         let b = Postgres::build()
             .start()
             .expect("could not build postgres database");
-        let c = Postgres::build()
+        let tcp = Postgres::build()
+            .tcp()
             .start()
-            .expect("could not build postgres database");
+            .expect("could not build TCP postgres database");
 
-        assert_ne!(
-            a.superuser_url().port().expect("URL must have a port"),
-            b.superuser_url().port().expect("URL must have a port")
-        );
-        assert_ne!(
-            a.superuser_url().port().expect("URL must have a port"),
-            c.superuser_url().port().expect("URL must have a port")
-        );
-        assert_ne!(
-            b.superuser_url().port().expect("URL must have a port"),
-            c.superuser_url().port().expect("URL must have a port")
-        );
+        let a_host = super::connection_host(a.superuser_url()).expect("URL must have a host");
+        let b_host = super::connection_host(b.superuser_url()).expect("URL must have a host");
+        let tcp_host = super::connection_host(tcp.superuser_url()).expect("URL must have a host");
+
+        assert!(a_host.starts_with('/'));
+        assert!(b_host.starts_with('/'));
+        assert_ne!(a_host, b_host);
+        assert_eq!(super::connection_port(a.superuser_url()), Some(5432));
+        assert_eq!(super::connection_port(b.superuser_url()), Some(5432));
+        assert_eq!(tcp_host, "127.0.0.1");
     }
 
     #[test]

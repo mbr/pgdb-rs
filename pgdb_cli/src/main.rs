@@ -20,7 +20,10 @@ use url::Url;
 #[derive(Debug, StructOpt)]
 #[structopt(setting = AppSettings::TrailingVarArg)]
 struct Opts {
-    /// Database port to use.
+    /// Use TCP instead of a Unix socket.
+    #[structopt(short, long)]
+    tcp: bool,
+    /// TCP port to use; implies --tcp.
     #[structopt(short, long)]
     port: Option<u16>,
     /// Username for regular database user.
@@ -43,7 +46,6 @@ struct Opts {
 /// Runs an action while the configured database is available.
 fn with_database<T>(
     opts: &Opts,
-    local_port: Option<u16>,
     action: impl FnOnce(&Url, &Url, bool) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
     if let Ok(external_url_str) = env::var("PGDB_TESTS_URL") {
@@ -71,8 +73,13 @@ fn with_database<T>(
         if let Some(superuser_pw) = &opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
         }
-        if let Some(port) = local_port {
-            builder.port(port);
+        if opts.tcp || opts.port.is_some() {
+            builder.tcp();
+            if opts.command.is_empty() {
+                builder.port(opts.port.unwrap_or(15432));
+            } else if let Some(port) = opts.port {
+                builder.port(port);
+            }
         }
 
         let pg = builder.start()?;
@@ -92,12 +99,14 @@ fn run_command(opts: &Opts, user_url: &Url) -> anyhow::Result<ExitStatus> {
         .split_first()
         .expect("command must contain a program");
 
+    let host = pgdb::connection_host(user_url).expect("URL must have a host");
+    let port = pgdb::connection_port(user_url).unwrap_or(5432);
     let mut signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
     let mut child = process::Command::new(program)
         .args(arguments)
         .env("DATABASE_URL", user_url.as_str())
-        .env("PGHOST", user_url.host_str().expect("URL must have a host"))
-        .env("PGPORT", user_url.port().unwrap_or(5432).to_string())
+        .env("PGHOST", host.as_ref())
+        .env("PGPORT", port.to_string())
         .env("PGUSER", &opts.user)
         .env("PGPASSWORD", &opts.password)
         .env("PGDATABASE", &opts.db)
@@ -135,42 +144,39 @@ fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
 
     if !opts.command.is_empty() {
-        let status = with_database(&opts, opts.port, |_, user_url, _| {
-            run_command(&opts, user_url)
-        })?;
+        let status = with_database(&opts, |_, user_url, _| run_command(&opts, user_url))?;
         exit_with_status(status);
     }
 
-    with_database(
-        &opts,
-        Some(opts.port.unwrap_or(15432)),
-        |superuser_url, user_url, external| {
-            println!();
-            if external {
-                println!("Connected to external PostgreSQL instance.");
-            } else {
-                println!("Postgres is now running and ready to accept connections.");
-            }
-            println!();
-            println!(
-                "PGHOST={}",
-                superuser_url.host_str().expect("URL must have a host")
-            );
-            println!("PGPORT={}", superuser_url.port().unwrap_or(5432));
-            println!("Superuser access:\n\n    {superuser_url}");
-            println!(
-                "\nA database named `{}`, owned by a user `{}` has been created.\n",
-                opts.db, opts.user
-            );
-            println!("Regular user access:\n\n    {user_url}");
-            println!("\nYou can run `psql` with either URL to connect.");
-            if external {
-                println!("\n(Using external PostgreSQL instance from PGDB_TESTS_URL)");
-            }
+    with_database(&opts, |superuser_url, user_url, external| {
+        println!();
+        if external {
+            println!("Connected to external PostgreSQL instance.");
+        } else {
+            println!("Postgres is now running and ready to accept connections.");
+        }
+        println!();
+        println!(
+            "PGHOST={}",
+            pgdb::connection_host(superuser_url).expect("URL must have a host")
+        );
+        println!(
+            "PGPORT={}",
+            pgdb::connection_port(superuser_url).unwrap_or(5432)
+        );
+        println!("Superuser access:\n\n    {superuser_url}");
+        println!(
+            "\nA database named `{}`, owned by a user `{}` has been created.\n",
+            opts.db, opts.user
+        );
+        println!("Regular user access:\n\n    {user_url}");
+        println!("\nYou can run `psql` with either URL to connect.");
+        if external {
+            println!("\n(Using external PostgreSQL instance from PGDB_TESTS_URL)");
+        }
 
-            loop {
-                thread::sleep(Duration::from_secs(60));
-            }
-        },
-    )
+        loop {
+            thread::sleep(Duration::from_secs(60));
+        }
+    })
 }
