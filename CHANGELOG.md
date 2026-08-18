@@ -3,8 +3,8 @@
 ## [Unreleased]
 
 - Added the `--startup-timeout` CLI option.
-- Made the PostgreSQL shutdown grace period configurable through `PostgresBuilder::shutdown_timeout()` and
-  `--shutdown-timeout`.
+- Made PostgreSQL graceful and forceful shutdown timeouts configurable through `PostgresBuilder` and CLI
+  options.
 - Added environment variable aliases for CLI configuration options.
 - Applied PostgreSQL environment configuration to instances created by `db_fixture()`.
 - External fixture cleanup now disconnects active clients before dropping databases.

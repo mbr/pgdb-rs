@@ -20,6 +20,8 @@ pub struct PostgresEnvironment {
     startup_timeout: Option<u64>,
     /// Maximum graceful shutdown duration in seconds.
     shutdown_timeout: Option<u64>,
+    /// Maximum forceful shutdown duration in seconds.
+    force_shutdown_timeout: Option<u64>,
 }
 
 impl PostgresEnvironment {
@@ -44,6 +46,9 @@ impl PostgresEnvironment {
         }
         if let Some(shutdown_timeout) = self.shutdown_timeout {
             builder.shutdown_timeout(Duration::from_secs(shutdown_timeout));
+        }
+        if let Some(force_shutdown_timeout) = self.force_shutdown_timeout {
+            builder.force_shutdown_timeout(Duration::from_secs(force_shutdown_timeout));
         }
     }
 
@@ -71,6 +76,7 @@ mod tests {
                 ("PGDB_SUPERUSER_PW".to_string(), "secret".to_string()),
                 ("PGDB_STARTUP_TIMEOUT".to_string(), "11".to_string()),
                 ("PGDB_SHUTDOWN_TIMEOUT".to_string(), "7".to_string()),
+                ("PGDB_FORCE_SHUTDOWN_TIMEOUT".to_string(), "2".to_string()),
                 ("PGDB_USER".to_string(), "ignored".to_string()),
             ])
             .expect("environment must be valid");
@@ -80,5 +86,6 @@ mod tests {
         assert_eq!(environment.superuser_pw.as_deref(), Some("secret"));
         assert_eq!(environment.startup_timeout, Some(11));
         assert_eq!(environment.shutdown_timeout, Some(7));
+        assert_eq!(environment.force_shutdown_timeout, Some(2));
     }
 }

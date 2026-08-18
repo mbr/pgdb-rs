@@ -47,9 +47,12 @@ struct Opts {
     /// Maximum time in seconds to wait for PostgreSQL to start.
     #[arg(long, value_name = "SECONDS")]
     startup_timeout: Option<u64>,
-    /// Maximum time in seconds to wait for PostgreSQL to shut down.
+    /// Maximum time in seconds to wait for PostgreSQL to shut down gracefully.
     #[arg(long, value_name = "SECONDS")]
     shutdown_timeout: Option<u64>,
+    /// Maximum time in seconds to wait for forceful PostgreSQL shutdown.
+    #[arg(long, value_name = "SECONDS")]
+    force_shutdown_timeout: Option<u64>,
     /// Command to run with the temporary database.
     #[arg(name = "command")]
     command: Vec<OsString>,
@@ -92,6 +95,9 @@ fn with_database<T>(
         }
         if let Some(shutdown_timeout) = opts.shutdown_timeout {
             builder.shutdown_timeout(Duration::from_secs(shutdown_timeout));
+        }
+        if let Some(force_shutdown_timeout) = opts.force_shutdown_timeout {
+            builder.force_shutdown_timeout(Duration::from_secs(force_shutdown_timeout));
         }
         if opts.tcp || opts.port.is_some() || environment.tcp() || environment.port().is_some() {
             builder.tcp();
