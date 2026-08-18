@@ -10,7 +10,7 @@ use std::{
 
 use url::Url;
 
-use crate::Postgres;
+use crate::{config::PostgresEnvironment, Postgres};
 
 /// A database instance.
 ///
@@ -144,11 +144,11 @@ pub fn db_fixture() -> DbInstance {
             // We still have an instance we can reuse.
             arc
         } else {
-            let arc = Arc::new(
-                Postgres::build()
-                    .start()
-                    .expect("failed to start global postgres DB"),
-            );
+            let environment =
+                PostgresEnvironment::read().expect("invalid PostgreSQL environment configuration");
+            let mut builder = Postgres::build();
+            environment.apply(&mut builder);
+            let arc = Arc::new(builder.start().expect("failed to start global postgres DB"));
             *guard = Arc::downgrade(&arc);
             arc
         }

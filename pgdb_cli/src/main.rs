@@ -21,10 +21,10 @@ use url::Url;
 #[command(trailing_var_arg = true)]
 struct Opts {
     /// Use TCP instead of a Unix socket.
-    #[arg(short, long, env = "PGDB_TCP")]
+    #[arg(short, long)]
     tcp: bool,
     /// TCP port to use; implies --tcp.
-    #[arg(short, long, env = "PGDB_PORT")]
+    #[arg(short, long)]
     port: Option<u16>,
     /// Username for regular database user.
     #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
@@ -42,13 +42,13 @@ struct Opts {
     #[arg(short, long, env = "PGDB_DB", default_value = "dev")]
     db: String,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
-    #[arg(short = 'S', long, env = "PGDB_SUPERUSER_PW", hide_env_values = true)]
+    #[arg(short = 'S', long)]
     superuser_pw: Option<String>,
     /// Maximum time in seconds to wait for PostgreSQL to start.
-    #[arg(long, env = "PGDB_STARTUP_TIMEOUT", value_name = "SECONDS")]
+    #[arg(long, value_name = "SECONDS")]
     startup_timeout: Option<u64>,
     /// Maximum time in seconds to wait for PostgreSQL to shut down.
-    #[arg(long, env = "PGDB_SHUTDOWN_TIMEOUT", value_name = "SECONDS")]
+    #[arg(long, value_name = "SECONDS")]
     shutdown_timeout: Option<u64>,
     /// Command to run with the temporary database.
     #[arg(name = "command")]
@@ -80,7 +80,9 @@ fn with_database<T>(
 
         action(&external_url, &user_url, true)
     } else {
+        let environment = pgdb::config::PostgresEnvironment::read()?;
         let mut builder = pgdb::Postgres::build();
+        environment.apply(&mut builder);
 
         if let Some(superuser_pw) = &opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
@@ -91,11 +93,12 @@ fn with_database<T>(
         if let Some(shutdown_timeout) = opts.shutdown_timeout {
             builder.shutdown_timeout(Duration::from_secs(shutdown_timeout));
         }
-        if opts.tcp || opts.port.is_some() {
+        if opts.tcp || opts.port.is_some() || environment.tcp() || environment.port().is_some() {
             builder.tcp();
+            let port = opts.port.or(environment.port());
             if opts.command.is_empty() {
-                builder.port(opts.port.unwrap_or(15432));
-            } else if let Some(port) = opts.port {
+                builder.port(port.unwrap_or(15432));
+            } else if let Some(port) = port {
                 builder.port(port);
             }
         }

@@ -6,6 +6,7 @@
 - Made the PostgreSQL shutdown grace period configurable through `PostgresBuilder::shutdown_timeout()` and
   `--shutdown-timeout`.
 - Added environment variable aliases for CLI configuration options.
+- Applied PostgreSQL environment configuration to instances created by `db_fixture()`.
 
 ## [0.7.0] - 2026-08-18
 
