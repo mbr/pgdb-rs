@@ -93,9 +93,9 @@ impl Drop for DbInstance {
                     .output();
             };
 
-            // Drop database first (this will fail if there are active connections)
+            // Fixture owners may be dropped before their clients.
             run_cleanup_sql(&format!(
-                "DROP DATABASE IF EXISTS {};",
+                "DROP DATABASE IF EXISTS {} WITH (FORCE);",
                 crate::escape_ident(db_name)
             ));
 

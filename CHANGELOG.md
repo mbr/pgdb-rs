@@ -7,6 +7,7 @@
   `--shutdown-timeout`.
 - Added environment variable aliases for CLI configuration options.
 - Applied PostgreSQL environment configuration to instances created by `db_fixture()`.
+- External fixture cleanup now disconnects active clients before dropping databases.
 
 ## [0.7.0] - 2026-08-18
 
