@@ -16,6 +16,17 @@ use signal_hook::{
 };
 use url::Url;
 
+/// Parses a PostgreSQL server option in `NAME=VALUE` form.
+fn parse_postgres_option(value: &str) -> Result<(String, String), String> {
+    let (name, value) = value
+        .split_once('=')
+        .ok_or_else(|| "expected NAME=VALUE".to_string())?;
+    if name.is_empty() {
+        return Err("option name must not be empty".to_string());
+    }
+    Ok((name.to_string(), value.to_string()))
+}
+
 /// Create a temporary postgres database with one user owning a single DB.
 #[derive(Debug, Parser)]
 #[command(trailing_var_arg = true)]
@@ -53,6 +64,9 @@ struct Opts {
     /// Maximum time in seconds to wait for forceful PostgreSQL shutdown.
     #[arg(long, value_name = "SECONDS")]
     force_shutdown_timeout: Option<u64>,
+    /// PostgreSQL server option in NAME=VALUE form.
+    #[arg(long, value_name = "NAME=VALUE", value_parser = parse_postgres_option)]
+    postgres_option: Vec<(String, String)>,
     /// Do not clean up test fixtures created through PGDB_TESTS_URL.
     #[arg(short = 'N', long)]
     no_tests_cleanup: bool,
@@ -104,6 +118,9 @@ fn with_database<T>(
         }
         if let Some(force_shutdown_timeout) = opts.force_shutdown_timeout {
             builder.force_shutdown_timeout(Duration::from_secs(force_shutdown_timeout));
+        }
+        for (name, value) in &opts.postgres_option {
+            builder.postgres_option(name, value);
         }
         if opts.tcp || opts.port.is_some() || environment.tcp() || environment.port().is_some() {
             builder.tcp();

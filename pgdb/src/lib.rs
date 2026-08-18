@@ -205,6 +205,8 @@ pub struct PostgresBuilder {
     pg_isready_binary: Option<path::PathBuf>,
     /// Path to `psql` binary.
     psql_binary: Option<path::PathBuf>,
+    /// PostgreSQL server configuration overrides.
+    postgres_options: Vec<(String, String)>,
     /// How long to wait between startup probe attempts.
     probe_delay: Duration,
     /// Time until giving up waiting for startup.
@@ -230,6 +232,7 @@ impl Postgres {
             initdb_binary: None,
             pg_isready_binary: None,
             psql_binary: None,
+            postgres_options: Vec::new(),
             probe_delay: Duration::from_millis(100),
             startup_timeout: Duration::from_secs(10),
             shutdown_timeout: Duration::from_secs(5),
@@ -434,6 +437,19 @@ impl PostgresBuilder {
         self
     }
 
+    /// Adds a PostgreSQL server configuration override.
+    ///
+    /// The option is passed to `postgres` as `-c NAME=VALUE`.
+    #[inline]
+    pub fn postgres_option<K, V>(&mut self, name: K, value: V) -> &mut Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.postgres_options.push((name.into(), value.into()));
+        self
+    }
+
     /// Sets the startup probe delay.
     ///
     /// Between two startup probes, waits this long.
@@ -555,6 +571,9 @@ impl PostgresBuilder {
             .arg(port.to_string())
             .arg("-k")
             .arg(tmp_dir.path());
+        for (name, value) in &self.postgres_options {
+            postgres_command.arg("-c").arg(format!("{name}={value}"));
+        }
         if self.tcp {
             postgres_command.arg("-h").arg(&self.host);
         } else {
