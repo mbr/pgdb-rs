@@ -6,6 +6,7 @@
 - Added an option to export a temporary server through `PGDB_TESTS_URL` to wrapped commands.
 - Added builder and CLI support for PostgreSQL server configuration overrides.
 - Added a fast mode for disposable servers and a test mode that also exports `PGDB_TESTS_URL`.
+- Added the `--version` CLI option.
 
 ## [0.8.0] - 2026-08-19
 

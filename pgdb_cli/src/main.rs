@@ -29,7 +29,7 @@ fn parse_postgres_option(value: &str) -> Result<(String, String), String> {
 
 /// Create a temporary postgres database with one user owning a single DB.
 #[derive(Debug, Parser)]
-#[command(trailing_var_arg = true)]
+#[command(name = "pgdb", version, trailing_var_arg = true)]
 struct Opts {
     /// Use TCP instead of a Unix socket.
     #[arg(short, long)]
