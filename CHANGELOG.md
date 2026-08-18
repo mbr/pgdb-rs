@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased]
+## [0.8.0] - 2026-08-19
 
 - Added the `--startup-timeout` CLI option.
 - Made PostgreSQL graceful and forceful shutdown timeouts configurable through `PostgresBuilder` and CLI
