@@ -8,7 +8,7 @@
 - Added environment variable aliases for CLI configuration options.
 - Applied PostgreSQL environment configuration to instances created by `db_fixture()`.
 - External fixture cleanup now disconnects active clients before dropping databases.
-- Temporary directories are no longer removed while PostgreSQL processes may still be running.
+- PostgreSQL shutdown now waits for bounded process-group cleanup before removing temporary directories.
 
 ## [0.7.0] - 2026-08-18
 

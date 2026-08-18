@@ -381,7 +381,6 @@ version = "0.7.0"
 dependencies = [
  "envy",
  "hex_fmt",
- "nix",
  "percent-encoding",
  "process_guard",
  "rand",
@@ -425,9 +424,9 @@ dependencies = [
 
 [[package]]
 name = "process_guard"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfc4c5e7bfe63a6288258fc66581d0f326f2032da16d5b0a25aa35acdc6f417b"
+checksum = "6c5a8ed0966f2d501980da558dca84a37cbadb609b06c1060fcb5b559eae8463"
 dependencies = [
  "log",
  "nix",

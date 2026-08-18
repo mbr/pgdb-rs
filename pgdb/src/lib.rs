@@ -14,16 +14,12 @@ use std::{
 
 pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
-use nix::{errno::Errno, sys::signal::killpg, unistd::Pid};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
-use process_guard::{ProcessGuard, ShutdownPolicy, Signal};
+use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
 use url::Url;
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
-
-/// Time to allow forcefully terminated process-group members to disappear.
-const PROCESS_GROUP_EXIT_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Returns the connection host represented by a PostgreSQL URL.
 pub fn connection_host(url: &Url) -> Option<Cow<'_, str>> {
@@ -158,30 +154,16 @@ pub struct Postgres {
 struct PostgresProcess {
     /// Guard for the PostgreSQL process group leader.
     instance: ProcessGuard,
-    /// PostgreSQL process group.
-    process_group: Pid,
     /// Directory holding all temporary data.
     tmp_dir: tempfile::TempDir,
 }
 
 impl Drop for PostgresProcess {
     fn drop(&mut self) {
-        if self.instance.shutdown().is_err() || !wait_for_process_group_exit(self.process_group) {
+        if self.instance.shutdown().is_err() {
             self.tmp_dir.disable_cleanup(true);
-        }
-    }
-}
-
-/// Waits briefly for a terminated process group to disappear.
-fn wait_for_process_group_exit(process_group: Pid) -> bool {
-    let started = Instant::now();
-    loop {
-        match killpg(process_group, None) {
-            Err(Errno::ESRCH) => return true,
-            Ok(()) | Err(_) if started.elapsed() < PROCESS_GROUP_EXIT_TIMEOUT => {
-                thread::sleep(Duration::from_millis(10));
-            }
-            Ok(()) | Err(_) => return false,
+            // Do not repeat the bounded shutdown when the guard is dropped.
+            let _ = self.instance.take();
         }
     }
 }
@@ -574,16 +556,11 @@ impl PostgresBuilder {
             ShutdownPolicy::Graceful {
                 signal: Signal::SIGINT,
                 grace_time: self.shutdown_timeout,
+                force_time: DEFAULT_FORCE_TIME,
             },
         )
         .map_err(Error::LaunchPostgres)?;
-        let process_group =
-            Pid::from_raw(instance.id().expect("process guard must own PostgreSQL") as i32);
-        let process = PostgresProcess {
-            instance,
-            process_group,
-            tmp_dir,
-        };
+        let process = PostgresProcess { instance, tmp_dir };
 
         // Wait for the server to become ready to accept connections.
         let started = Instant::now();
