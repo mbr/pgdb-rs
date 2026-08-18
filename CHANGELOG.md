@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [Unreleased]
+
+- Added the `--startup-timeout` CLI option.
+
 ## [0.7.0] - 2026-08-18
 
 - Replaced deprecated `structopt` usage with `clap`.

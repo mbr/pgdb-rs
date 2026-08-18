@@ -6,6 +6,7 @@ use std::{
     os::unix::process::ExitStatusExt,
     process::{self, ExitStatus},
     thread,
+    time::Duration,
 };
 
 use clap::Parser;
@@ -37,6 +38,9 @@ struct Opts {
     /// Password for the superuser ("postgres") account, default is to generate randomly.
     #[arg(short = 'S', long)]
     superuser_pw: Option<String>,
+    /// Maximum time in seconds to wait for PostgreSQL to start.
+    #[arg(long, value_name = "SECONDS")]
+    startup_timeout: Option<u64>,
     /// Command to run with the temporary database.
     #[arg(name = "command")]
     command: Vec<OsString>,
@@ -71,6 +75,9 @@ fn with_database<T>(
 
         if let Some(superuser_pw) = &opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
+        }
+        if let Some(startup_timeout) = opts.startup_timeout {
+            builder.startup_timeout(Duration::from_secs(startup_timeout));
         }
         if opts.tcp || opts.port.is_some() {
             builder.tcp();
