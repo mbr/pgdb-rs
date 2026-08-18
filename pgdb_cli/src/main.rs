@@ -21,28 +21,34 @@ use url::Url;
 #[command(trailing_var_arg = true)]
 struct Opts {
     /// Use TCP instead of a Unix socket.
-    #[arg(short, long)]
+    #[arg(short, long, env = "PGDB_TCP")]
     tcp: bool,
     /// TCP port to use; implies --tcp.
-    #[arg(short, long)]
+    #[arg(short, long, env = "PGDB_PORT")]
     port: Option<u16>,
     /// Username for regular database user.
-    #[arg(short, long, default_value = "dev")]
+    #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
     user: String,
     /// Password for regular database user.
-    #[arg(short = 'P', long, default_value = "dev")]
+    #[arg(
+        short = 'P',
+        long,
+        env = "PGDB_PASSWORD",
+        hide_env_values = true,
+        default_value = "dev"
+    )]
     password: String,
     /// Name of regular user-owned database.
-    #[arg(short, long, default_value = "dev")]
+    #[arg(short, long, env = "PGDB_DB", default_value = "dev")]
     db: String,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
-    #[arg(short = 'S', long)]
+    #[arg(short = 'S', long, env = "PGDB_SUPERUSER_PW", hide_env_values = true)]
     superuser_pw: Option<String>,
     /// Maximum time in seconds to wait for PostgreSQL to start.
-    #[arg(long, value_name = "SECONDS")]
+    #[arg(long, env = "PGDB_STARTUP_TIMEOUT", value_name = "SECONDS")]
     startup_timeout: Option<u64>,
     /// Maximum time in seconds to wait for PostgreSQL to shut down.
-    #[arg(long, value_name = "SECONDS")]
+    #[arg(long, env = "PGDB_SHUTDOWN_TIMEOUT", value_name = "SECONDS")]
     shutdown_timeout: Option<u64>,
     /// Command to run with the temporary database.
     #[arg(name = "command")]

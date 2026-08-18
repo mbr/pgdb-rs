@@ -5,6 +5,7 @@
 - Added the `--startup-timeout` CLI option.
 - Made the PostgreSQL shutdown grace period configurable through `PostgresBuilder::shutdown_timeout()` and
   `--shutdown-timeout`.
+- Added environment variable aliases for CLI configuration options.
 
 ## [0.7.0] - 2026-08-18
 
