@@ -192,6 +192,8 @@ pub struct PostgresBuilder {
     probe_delay: Duration,
     /// Time until giving up waiting for startup.
     startup_timeout: Duration,
+    /// Time to allow graceful shutdown before forceful cleanup.
+    shutdown_timeout: Duration,
 }
 
 impl Postgres {
@@ -211,6 +213,7 @@ impl Postgres {
             psql_binary: None,
             probe_delay: Duration::from_millis(100),
             startup_timeout: Duration::from_secs(10),
+            shutdown_timeout: Duration::from_secs(5),
         }
     }
 
@@ -434,6 +437,13 @@ impl PostgresBuilder {
         self
     }
 
+    /// Sets the maximum time to wait for graceful shutdown.
+    #[inline]
+    pub fn shutdown_timeout(&mut self, shutdown_timeout: Duration) -> &mut Self {
+        self.shutdown_timeout = shutdown_timeout;
+        self
+    }
+
     /// Sets the password for the superuser.
     #[inline]
     pub fn superuser_pw<T: Into<String>>(&mut self, superuser_pw: T) -> &mut Self {
@@ -528,7 +538,7 @@ impl PostgresBuilder {
             &mut postgres_command,
             ShutdownPolicy::Graceful {
                 signal: Signal::SIGINT,
-                grace_time: Duration::from_secs(5),
+                grace_time: self.shutdown_timeout,
             },
         )
         .map_err(Error::LaunchPostgres)?;

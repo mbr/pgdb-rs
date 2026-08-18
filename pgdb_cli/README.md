@@ -29,8 +29,8 @@ This will:
 - Keep running until interrupted (Ctrl+C)
 
 Pass `-t` or `--tcp` to use TCP instead. `--port` selects a TCP port and implies `--tcp`.
-Use `--startup-timeout SECONDS` to limit how long `pgdb` waits for PostgreSQL to start.
-The generated socket URLs work with `psql` and SQLx.
+Use `--startup-timeout SECONDS` and `--shutdown-timeout SECONDS` to limit how long `pgdb`
+waits for PostgreSQL to start and shut down. The generated socket URLs work with `psql` and SQLx.
 
 ### Command mode
 
