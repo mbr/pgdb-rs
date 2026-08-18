@@ -14,12 +14,16 @@ use std::{
 
 pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
+use nix::{errno::Errno, sys::signal::killpg, unistd::Pid};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal};
 use url::Url;
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
+
+/// Time to allow forcefully terminated process-group members to disappear.
+const PROCESS_GROUP_EXIT_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Returns the connection host represented by a PostgreSQL URL.
 pub fn connection_host(url: &Url) -> Option<Cow<'_, str>> {
@@ -142,14 +146,44 @@ fn find_unused_port() -> io::Result<u16> {
 pub struct Postgres {
     /// URL for the instance with superuser credentials.
     superuser_url: Url,
-    /// Instance of the postgres process.
+    /// PostgreSQL process and its temporary directory.
     #[allow(dead_code)] // Only used for its `Drop` implementation.
-    instance: ProcessGuard,
+    process: PostgresProcess,
     /// Path to the `psql` binary.
     psql_binary: path::PathBuf,
-    /// Directory holding all the temporary data.
-    #[allow(dead_code)] // Only used for its `Drop` implementation.
+}
+
+/// Resources owned by a PostgreSQL process.
+#[derive(Debug)]
+struct PostgresProcess {
+    /// Guard for the PostgreSQL process group leader.
+    instance: ProcessGuard,
+    /// PostgreSQL process group.
+    process_group: Pid,
+    /// Directory holding all temporary data.
     tmp_dir: tempfile::TempDir,
+}
+
+impl Drop for PostgresProcess {
+    fn drop(&mut self) {
+        if self.instance.shutdown().is_err() || !wait_for_process_group_exit(self.process_group) {
+            self.tmp_dir.disable_cleanup(true);
+        }
+    }
+}
+
+/// Waits briefly for a terminated process group to disappear.
+fn wait_for_process_group_exit(process_group: Pid) -> bool {
+    let started = Instant::now();
+    loop {
+        match killpg(process_group, None) {
+            Err(Errno::ESRCH) => return true,
+            Ok(()) | Err(_) if started.elapsed() < PROCESS_GROUP_EXIT_TIMEOUT => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(()) | Err(_) => return false,
+        }
+    }
 }
 
 /// A virtual client for a running postgres.
@@ -543,6 +577,13 @@ impl PostgresBuilder {
             },
         )
         .map_err(Error::LaunchPostgres)?;
+        let process_group =
+            Pid::from_raw(instance.id().expect("process guard must own PostgreSQL") as i32);
+        let process = PostgresProcess {
+            instance,
+            process_group,
+            tmp_dir,
+        };
 
         // Wait for the server to become ready to accept connections.
         let started = Instant::now();
@@ -552,7 +593,7 @@ impl PostgresBuilder {
             if self.tcp {
                 pg_isready_command.arg(&self.host);
             } else {
-                pg_isready_command.arg(tmp_dir.path());
+                pg_isready_command.arg(process.tmp_dir.path());
             }
             let status = pg_isready_command
                 .arg("-p")
@@ -576,7 +617,7 @@ impl PostgresBuilder {
             Url::parse(&format!("postgres://{}:{}", self.host, port))
                 .expect("Failed to construct TCP URL")
         } else {
-            let socket_dir = tmp_dir.path().to_string_lossy();
+            let socket_dir = process.tmp_dir.path().to_string_lossy();
             let encoded_socket_dir = utf8_percent_encode(&socket_dir, NON_ALPHANUMERIC).to_string();
             Url::parse(&format!("postgres://{encoded_socket_dir}:{port}"))
                 .expect("Failed to construct Unix socket URL")
@@ -590,9 +631,8 @@ impl PostgresBuilder {
 
         Ok(Postgres {
             superuser_url,
-            instance,
+            process,
             psql_binary,
-            tmp_dir,
         })
     }
 }
@@ -663,6 +703,8 @@ pub fn parse_external_test_url() -> Result<Option<Url>, Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use url::Url;
 
     use super::Postgres;
@@ -714,6 +756,19 @@ mod tests {
         assert_eq!(super::connection_port(a.superuser_url()), Some(5432));
         assert_eq!(super::connection_port(b.superuser_url()), Some(5432));
         assert_eq!(tcp_host, "127.0.0.1");
+    }
+
+    #[test]
+    fn forceful_shutdown_waits_before_removing_temporary_directory() {
+        let pg = Postgres::build()
+            .shutdown_timeout(Duration::ZERO)
+            .start()
+            .expect("could not build postgres database");
+        let temporary_directory = pg.process.tmp_dir.path().to_path_buf();
+
+        drop(pg);
+
+        assert!(!temporary_directory.exists());
     }
 
     #[test]

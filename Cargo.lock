@@ -371,6 +371,7 @@ name = "pgdb"
 version = "0.7.0"
 dependencies = [
  "hex_fmt",
+ "nix",
  "percent-encoding",
  "process_guard",
  "rand",
