@@ -56,6 +56,9 @@ struct Opts {
     /// Do not clean up test fixtures created through PGDB_TESTS_URL.
     #[arg(short = 'N', long)]
     no_tests_cleanup: bool,
+    /// Export the PostgreSQL superuser URL as PGDB_TESTS_URL.
+    #[arg(short = 'E', long)]
+    export_tests_url: bool,
     /// Command to run with the temporary database.
     #[arg(name = "command")]
     command: Vec<OsString>,
@@ -123,7 +126,12 @@ fn with_database<T>(
 }
 
 /// Runs a command with connection details for the configured database.
-fn run_command(opts: &Opts, user_url: &Url, mut signals: Signals) -> anyhow::Result<ExitStatus> {
+fn run_command(
+    opts: &Opts,
+    superuser_url: &Url,
+    user_url: &Url,
+    mut signals: Signals,
+) -> anyhow::Result<ExitStatus> {
     let (program, arguments) = opts
         .command
         .split_first()
@@ -142,6 +150,9 @@ fn run_command(opts: &Opts, user_url: &Url, mut signals: Signals) -> anyhow::Res
         .env("PGDATABASE", &opts.db);
     if opts.no_tests_cleanup {
         command.env("PGDB_TESTS_CLEANUP", "false");
+    }
+    if opts.export_tests_url {
+        command.env("PGDB_TESTS_URL", superuser_url.as_str());
     }
     let mut child = command.spawn()?;
 
@@ -178,8 +189,8 @@ fn main() -> anyhow::Result<()> {
     let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
 
     if !opts.command.is_empty() {
-        let status = with_database(&opts, |_, user_url, _| {
-            run_command(&opts, user_url, signals)
+        let status = with_database(&opts, |superuser_url, user_url, _| {
+            run_command(&opts, superuser_url, user_url, signals)
         })?;
         exit_with_status(status);
     }

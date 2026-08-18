@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Added an option to skip cleanup of external test fixtures.
+- Added an option to export a temporary server through `PGDB_TESTS_URL` to wrapped commands.
 
 ## [0.8.0] - 2026-08-19
 
