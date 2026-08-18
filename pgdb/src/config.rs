@@ -22,6 +22,8 @@ pub struct PostgresEnvironment {
     shutdown_timeout: Option<u64>,
     /// Maximum forceful shutdown duration in seconds.
     force_shutdown_timeout: Option<u64>,
+    /// Whether external test fixtures should be cleaned up on drop.
+    tests_cleanup: Option<bool>,
 }
 
 impl PostgresEnvironment {
@@ -52,6 +54,11 @@ impl PostgresEnvironment {
         }
     }
 
+    /// Returns whether external test fixtures should be cleaned up on drop.
+    pub fn tests_cleanup(&self) -> bool {
+        self.tests_cleanup.unwrap_or(true)
+    }
+
     /// Returns whether TCP was requested.
     pub fn tcp(&self) -> bool {
         self.tcp
@@ -77,6 +84,7 @@ mod tests {
                 ("PGDB_STARTUP_TIMEOUT".to_string(), "11".to_string()),
                 ("PGDB_SHUTDOWN_TIMEOUT".to_string(), "7".to_string()),
                 ("PGDB_FORCE_SHUTDOWN_TIMEOUT".to_string(), "2".to_string()),
+                ("PGDB_TESTS_CLEANUP".to_string(), "false".to_string()),
                 ("PGDB_USER".to_string(), "ignored".to_string()),
             ])
             .expect("environment must be valid");
@@ -87,5 +95,7 @@ mod tests {
         assert_eq!(environment.startup_timeout, Some(11));
         assert_eq!(environment.shutdown_timeout, Some(7));
         assert_eq!(environment.force_shutdown_timeout, Some(2));
+        assert!(!environment.tests_cleanup());
+        assert!(PostgresEnvironment::default().tests_cleanup());
     }
 }

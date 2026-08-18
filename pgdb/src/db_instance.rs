@@ -31,6 +31,8 @@ pub enum DbInstance {
         url: Url,
         /// The superuser URL for cleanup operations.
         superuser_url: Url,
+        /// Whether to clean up the database and role on drop.
+        cleanup: bool,
     },
 }
 
@@ -60,7 +62,16 @@ impl AsRef<str> for DbInstance {
 
 impl Drop for DbInstance {
     fn drop(&mut self) {
-        if let DbInstance::External { url, superuser_url } = self {
+        if let DbInstance::External {
+            url,
+            superuser_url,
+            cleanup,
+        } = self
+        {
+            if !*cleanup {
+                return;
+            }
+
             // Extract database and usernames from the URL
             let db_name = url.path().trim_start_matches('/');
             let db_user = url.username();
@@ -117,7 +128,8 @@ impl Drop for DbInstance {
 ///
 /// If the `PGDB_TESTS_URL` environment variable is set, it will be used as an external database
 /// URL instead of creating a local instance. The URL must include superuser credentials. A new
-/// database will be created for each call, just like with local instances.
+/// database will be created for each call, just like with local instances. Set
+/// `PGDB_TESTS_CLEANUP=false` to leave those databases and roles behind on drop.
 ///
 /// Otherwise, uses a shared database instance if multiple tests are running at the same time (see
 /// [`DbInstance`] for details). The database may be shut down and recreated if the last [`DbInstance`] is
@@ -126,6 +138,9 @@ impl Drop for DbInstance {
 /// This construction is necessary because `static` variables will not have `Drop` called on them,
 /// without this construction, the spawned Postgres server would not be stopped.
 pub fn db_fixture() -> DbInstance {
+    let environment =
+        PostgresEnvironment::read().expect("invalid PostgreSQL environment configuration");
+
     // Check for external database URL first
     if let Some(external_url) = crate::parse_external_test_url().expect("invalid PGDB_TESTS_URL") {
         let url =
@@ -133,6 +148,7 @@ pub fn db_fixture() -> DbInstance {
         return DbInstance::External {
             url,
             superuser_url: external_url,
+            cleanup: environment.tests_cleanup(),
         };
     }
 
@@ -144,8 +160,6 @@ pub fn db_fixture() -> DbInstance {
             // We still have an instance we can reuse.
             arc
         } else {
-            let environment =
-                PostgresEnvironment::read().expect("invalid PostgreSQL environment configuration");
             let mut builder = Postgres::build();
             environment.apply(&mut builder);
             let arc = Arc::new(builder.start().expect("failed to start global postgres DB"));

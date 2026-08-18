@@ -53,6 +53,9 @@ struct Opts {
     /// Maximum time in seconds to wait for forceful PostgreSQL shutdown.
     #[arg(long, value_name = "SECONDS")]
     force_shutdown_timeout: Option<u64>,
+    /// Do not clean up test fixtures created through PGDB_TESTS_URL.
+    #[arg(short = 'N', long)]
+    no_tests_cleanup: bool,
     /// Command to run with the temporary database.
     #[arg(name = "command")]
     command: Vec<OsString>,
@@ -128,15 +131,19 @@ fn run_command(opts: &Opts, user_url: &Url, mut signals: Signals) -> anyhow::Res
 
     let host = pgdb::connection_host(user_url).expect("URL must have a host");
     let port = pgdb::connection_port(user_url).unwrap_or(5432);
-    let mut child = process::Command::new(program)
+    let mut command = process::Command::new(program);
+    command
         .args(arguments)
         .env("DATABASE_URL", user_url.as_str())
         .env("PGHOST", host.as_ref())
         .env("PGPORT", port.to_string())
         .env("PGUSER", &opts.user)
         .env("PGPASSWORD", &opts.password)
-        .env("PGDATABASE", &opts.db)
-        .spawn()?;
+        .env("PGDATABASE", &opts.db);
+    if opts.no_tests_cleanup {
+        command.env("PGDB_TESTS_CLEANUP", "false");
+    }
+    let mut child = command.spawn()?;
 
     let child_pid = child.id() as libc::pid_t;
     let signal_handle = signals.handle();

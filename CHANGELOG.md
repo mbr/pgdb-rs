@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [Unreleased]
+
+- Added an option to skip cleanup of external test fixtures.
+
 ## [0.8.0] - 2026-08-19
 
 - Added the `--startup-timeout` CLI option.
