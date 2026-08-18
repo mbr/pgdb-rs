@@ -9,6 +9,9 @@ use crate::PostgresBuilder;
 /// Environment-derived overrides for a PostgreSQL instance.
 #[derive(Debug, Default, Deserialize)]
 pub struct PostgresEnvironment {
+    /// Whether to use fast settings for disposable servers.
+    #[serde(default)]
+    fast: bool,
     /// Whether to use TCP.
     #[serde(default)]
     tcp: bool,
@@ -34,6 +37,9 @@ impl PostgresEnvironment {
 
     /// Applies the configured overrides to a PostgreSQL builder.
     pub fn apply(&self, builder: &mut PostgresBuilder) {
+        if self.fast {
+            builder.fast();
+        }
         if self.tcp {
             builder.tcp();
         }
@@ -78,6 +84,7 @@ mod tests {
     fn parses_prefixed_environment() {
         let environment = envy::prefixed("PGDB_")
             .from_iter::<_, PostgresEnvironment>(vec![
+                ("PGDB_FAST".to_string(), "true".to_string()),
                 ("PGDB_TCP".to_string(), "true".to_string()),
                 ("PGDB_PORT".to_string(), "15432".to_string()),
                 ("PGDB_SUPERUSER_PW".to_string(), "secret".to_string()),
@@ -89,6 +96,7 @@ mod tests {
             ])
             .expect("environment must be valid");
 
+        assert!(environment.fast);
         assert!(environment.tcp);
         assert_eq!(environment.port, Some(15432));
         assert_eq!(environment.superuser_pw.as_deref(), Some("secret"));

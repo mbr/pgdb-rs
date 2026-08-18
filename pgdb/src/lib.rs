@@ -191,6 +191,8 @@ pub struct PostgresBuilder {
     port: Option<u16>,
     /// TCP bind host.
     host: String,
+    /// Whether to use fast settings for disposable servers.
+    fast: bool,
     /// Whether to connect over TCP.
     tcp: bool,
     /// Name of the superuser.
@@ -225,6 +227,7 @@ impl Postgres {
             data_dir: None,
             port: None,
             host: "127.0.0.1".to_string(),
+            fast: false,
             tcp: false,
             superuser: "postgres".to_string(),
             superuser_pw: generate_random_string(),
@@ -380,6 +383,16 @@ impl<'a> PostgresClient<'a> {
 }
 
 impl PostgresBuilder {
+    /// Enables faster settings for a disposable PostgreSQL server.
+    ///
+    /// This disables runtime durability and uses immediate shutdown. It must not be used when the
+    /// database needs to survive an operating system crash or server shutdown.
+    #[inline]
+    pub fn fast(&mut self) -> &mut Self {
+        self.fast = true;
+        self
+    }
+
     /// Sets the postgres data directory.
     ///
     /// If not set, a temporary directory will be used.
@@ -571,6 +584,15 @@ impl PostgresBuilder {
             .arg(port.to_string())
             .arg("-k")
             .arg(tmp_dir.path());
+        if self.fast {
+            for option in [
+                "fsync=off",
+                "synchronous_commit=off",
+                "full_page_writes=off",
+            ] {
+                postgres_command.arg("-c").arg(option);
+            }
+        }
         for (name, value) in &self.postgres_options {
             postgres_command.arg("-c").arg(format!("{name}={value}"));
         }
@@ -583,7 +605,11 @@ impl PostgresBuilder {
         let instance = ProcessGuard::spawn_process_group(
             &mut postgres_command,
             ShutdownPolicy::Graceful {
-                signal: Signal::SIGINT,
+                signal: if self.fast {
+                    Signal::SIGQUIT
+                } else {
+                    Signal::SIGINT
+                },
                 grace_time: self.shutdown_timeout,
                 force_time: self.force_shutdown_timeout,
             },
@@ -737,6 +763,29 @@ mod tests {
 
         // Command executed successfully, check we used the right password.
         assert_eq!(su.client_url().password(), Some("helloworld"));
+    }
+
+    #[test]
+    fn fast_mode_disables_runtime_durability() {
+        let pg = Postgres::build()
+            .fast()
+            .start()
+            .expect("could not build postgres database");
+        let output = pg
+            .as_superuser()
+            .psql("postgres")
+            .args([
+                "-Atc",
+                "SELECT current_setting('fsync'), current_setting('synchronous_commit'), current_setting('full_page_writes')",
+            ])
+            .output()
+            .expect("could not query postgres settings");
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "off|off|off"
+        );
     }
 
     #[test]

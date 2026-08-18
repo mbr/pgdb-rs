@@ -67,6 +67,12 @@ struct Opts {
     /// PostgreSQL server option in NAME=VALUE form.
     #[arg(long, value_name = "NAME=VALUE", value_parser = parse_postgres_option)]
     postgres_option: Vec<(String, String)>,
+    /// Disable durability and use immediate shutdown.
+    #[arg(short = 'F', long)]
+    fast: bool,
+    /// Enable fast mode and export PGDB_TESTS_URL.
+    #[arg(short = 'T', long = "test")]
+    test: bool,
     /// Do not clean up test fixtures created through PGDB_TESTS_URL.
     #[arg(short = 'N', long)]
     no_tests_cleanup: bool,
@@ -76,6 +82,18 @@ struct Opts {
     /// Command to run with the temporary database.
     #[arg(name = "command")]
     command: Vec<OsString>,
+}
+
+impl Opts {
+    /// Returns whether fast mode was requested.
+    fn fast(&self) -> bool {
+        self.fast || self.test
+    }
+
+    /// Returns whether `PGDB_TESTS_URL` should be exported.
+    fn export_tests_url(&self) -> bool {
+        self.export_tests_url || self.test
+    }
 }
 
 /// Runs an action while the configured database is available.
@@ -109,6 +127,9 @@ fn with_database<T>(
 
         if let Some(superuser_pw) = &opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
+        }
+        if opts.fast() {
+            builder.fast();
         }
         if let Some(startup_timeout) = opts.startup_timeout {
             builder.startup_timeout(Duration::from_secs(startup_timeout));
@@ -168,7 +189,7 @@ fn run_command(
     if opts.no_tests_cleanup {
         command.env("PGDB_TESTS_CLEANUP", "false");
     }
-    if opts.export_tests_url {
+    if opts.export_tests_url() {
         command.env("PGDB_TESTS_URL", superuser_url.as_str());
     }
     let mut child = command.spawn()?;
@@ -243,4 +264,20 @@ fn main() -> anyhow::Result<()> {
         let _ = signals.forever().next();
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::Opts;
+
+    #[test]
+    fn test_mode_enables_fast_mode_and_url_export() {
+        let opts = Opts::parse_from(["pgdb", "-T", "cargo", "test"]);
+
+        assert!(opts.fast());
+        assert!(opts.export_tests_url());
+        assert_eq!(opts.command, ["cargo", "test"]);
+    }
 }
