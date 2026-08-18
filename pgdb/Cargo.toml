@@ -10,11 +10,13 @@ description = "Creates and runs Postgres databases through Rust in temporary dir
 readme = "README.md"
 
 [dependencies]
+envy = "0.4.2"
 hex_fmt = "0.3.0"
 nix = { version = "0.31.3", features = ["signal"] }
 percent-encoding = "2.3.2"
 process_guard = "0.3.0"
 rand = "0.10.2"
+serde = { version = "1.0.229", features = ["derive"] }
 tempfile = { workspace = true }
 thiserror = "2.0.20"
 url = { workspace = true }

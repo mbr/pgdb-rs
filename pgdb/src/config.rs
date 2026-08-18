@@ -1,52 +1,31 @@
 //! Environment configuration for PostgreSQL instances.
 
-use std::{env, num::ParseIntError, str::ParseBoolError, time::Duration};
+use std::time::Duration;
 
-use thiserror::Error;
+use serde::Deserialize;
 
 use crate::PostgresBuilder;
 
 /// Environment-derived overrides for a PostgreSQL instance.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
 pub struct PostgresEnvironment {
     /// Whether to use TCP.
+    #[serde(default)]
     tcp: bool,
     /// TCP port to use.
     port: Option<u16>,
     /// Password for the superuser.
     superuser_pw: Option<String>,
-    /// Maximum startup duration.
-    startup_timeout: Option<Duration>,
-    /// Maximum graceful shutdown duration.
-    shutdown_timeout: Option<Duration>,
+    /// Maximum startup duration in seconds.
+    startup_timeout: Option<u64>,
+    /// Maximum graceful shutdown duration in seconds.
+    shutdown_timeout: Option<u64>,
 }
 
 impl PostgresEnvironment {
     /// Reads PostgreSQL configuration from the process environment.
-    pub fn read() -> Result<Self, EnvironmentError> {
-        let tcp = read_value("PGDB_TCP")?
-            .map(|value| {
-                value
-                    .parse()
-                    .map_err(|source| EnvironmentError::InvalidBoolean {
-                        name: "PGDB_TCP",
-                        source,
-                    })
-            })
-            .transpose()?
-            .unwrap_or(false);
-        let port = read_integer("PGDB_PORT")?;
-        let superuser_pw = read_value("PGDB_SUPERUSER_PW")?;
-        let startup_timeout = read_integer("PGDB_STARTUP_TIMEOUT")?.map(Duration::from_secs);
-        let shutdown_timeout = read_integer("PGDB_SHUTDOWN_TIMEOUT")?.map(Duration::from_secs);
-
-        Ok(Self {
-            tcp,
-            port,
-            superuser_pw,
-            startup_timeout,
-            shutdown_timeout,
-        })
+    pub fn read() -> Result<Self, envy::Error> {
+        envy::prefixed("PGDB_").from_env()
     }
 
     /// Applies the configured overrides to a PostgreSQL builder.
@@ -61,10 +40,10 @@ impl PostgresEnvironment {
             builder.superuser_pw(superuser_pw);
         }
         if let Some(startup_timeout) = self.startup_timeout {
-            builder.startup_timeout(startup_timeout);
+            builder.startup_timeout(Duration::from_secs(startup_timeout));
         }
         if let Some(shutdown_timeout) = self.shutdown_timeout {
-            builder.shutdown_timeout(shutdown_timeout);
+            builder.shutdown_timeout(Duration::from_secs(shutdown_timeout));
         }
     }
 
@@ -79,57 +58,27 @@ impl PostgresEnvironment {
     }
 }
 
-/// An error encountered while reading PostgreSQL environment configuration.
-#[derive(Debug, Error)]
-pub enum EnvironmentError {
-    /// An environment variable contains non-Unicode data.
-    #[error("could not read {name}")]
-    Read {
-        /// Environment variable name.
-        name: &'static str,
-        /// Environment access error.
-        #[source]
-        source: env::VarError,
-    },
-    /// An environment variable does not contain a boolean.
-    #[error("invalid value for {name}")]
-    InvalidBoolean {
-        /// Environment variable name.
-        name: &'static str,
-        /// Boolean parsing error.
-        #[source]
-        source: ParseBoolError,
-    },
-    /// An environment variable does not contain an integer.
-    #[error("invalid value for {name}")]
-    InvalidInteger {
-        /// Environment variable name.
-        name: &'static str,
-        /// Integer parsing error.
-        #[source]
-        source: ParseIntError,
-    },
-}
+#[cfg(test)]
+mod tests {
+    use super::PostgresEnvironment;
 
-/// Reads an optional Unicode environment variable.
-fn read_value(name: &'static str) -> Result<Option<String>, EnvironmentError> {
-    match env::var(name) {
-        Ok(value) => Ok(Some(value)),
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(source) => Err(EnvironmentError::Read { name, source }),
+    #[test]
+    fn parses_prefixed_environment() {
+        let environment = envy::prefixed("PGDB_")
+            .from_iter::<_, PostgresEnvironment>(vec![
+                ("PGDB_TCP".to_string(), "true".to_string()),
+                ("PGDB_PORT".to_string(), "15432".to_string()),
+                ("PGDB_SUPERUSER_PW".to_string(), "secret".to_string()),
+                ("PGDB_STARTUP_TIMEOUT".to_string(), "11".to_string()),
+                ("PGDB_SHUTDOWN_TIMEOUT".to_string(), "7".to_string()),
+                ("PGDB_USER".to_string(), "ignored".to_string()),
+            ])
+            .expect("environment must be valid");
+
+        assert!(environment.tcp);
+        assert_eq!(environment.port, Some(15432));
+        assert_eq!(environment.superuser_pw.as_deref(), Some("secret"));
+        assert_eq!(environment.startup_timeout, Some(11));
+        assert_eq!(environment.shutdown_timeout, Some(7));
     }
-}
-
-/// Reads an optional integer environment variable.
-fn read_integer<T>(name: &'static str) -> Result<Option<T>, EnvironmentError>
-where
-    T: std::str::FromStr<Err = ParseIntError>,
-{
-    read_value(name)?
-        .map(|value| {
-            value
-                .parse()
-                .map_err(|source| EnvironmentError::InvalidInteger { name, source })
-        })
-        .transpose()
 }
