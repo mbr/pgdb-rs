@@ -1,15 +1,17 @@
 #![doc = include_str!("../README.md")]
 
 use std::{
-    env,
     ffi::OsString,
     os::unix::process::ExitStatusExt,
+    path::PathBuf,
     process::{self, ExitStatus},
     thread,
     time::Duration,
 };
 
+use anyhow::Context;
 use clap::Parser;
+use pgdb::state::{Credentials, State};
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -37,6 +39,9 @@ struct Opts {
     /// TCP port to use; implies --tcp.
     #[arg(short, long)]
     port: Option<u16>,
+    /// Persistent cluster directory; omitted for a disposable database.
+    #[arg(long, env = "PGDB_DATA_DIR")]
+    data_dir: Option<PathBuf>,
     /// Username for regular database user.
     #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
     user: String,
@@ -99,16 +104,13 @@ impl Opts {
 /// Runs an action while the configured database is available.
 fn with_database<T>(
     opts: &Opts,
+    initialized: bool,
+    external_url: Option<&Url>,
     action: impl FnOnce(&Url, &Url, bool) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
-    if let Ok(external_url_str) = env::var("PGDB_TESTS_URL") {
-        let external_url = Url::parse(&external_url_str)?;
-        if external_url.scheme() != "postgres" {
-            anyhow::bail!("PGDB_TESTS_URL must use postgres:// scheme");
-        }
-
+    if let Some(external_url) = external_url {
         let _tmp_dir = tempfile::TempDir::new()?;
-        pgdb::create_user_and_database(&external_url, &opts.db, &opts.user, &opts.password)?;
+        pgdb::create_user_and_database(external_url, &opts.db, &opts.user, &opts.password)?;
 
         let mut user_url = external_url.clone();
         user_url
@@ -119,11 +121,14 @@ fn with_database<T>(
             .expect("Failed to set password");
         user_url.set_path(&opts.db);
 
-        action(&external_url, &user_url, true)
+        action(external_url, &user_url, true)
     } else {
         let environment = pgdb::config::PostgresEnvironment::read()?;
         let mut builder = pgdb::Postgres::build();
         environment.apply(&mut builder);
+        if let Some(data_dir) = &opts.data_dir {
+            builder.data_dir(data_dir);
+        }
 
         if let Some(superuser_pw) = &opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
@@ -154,9 +159,28 @@ fn with_database<T>(
         }
 
         let pg = builder.start()?;
-        pg.as_superuser().create_user(&opts.user, &opts.password)?;
-        pg.as_superuser().create_database(&opts.db, &opts.user)?;
-
+        if !initialized {
+            pg.as_superuser().create_user(&opts.user, &opts.password)?;
+            pg.as_superuser().create_database(&opts.db, &opts.user)?;
+        }
+        let status = pg
+            .as_user(&opts.user, &opts.password)
+            .psql(&opts.db)
+            .args(["-Xw", "-c", "SELECT 1"])
+            .stdout(process::Stdio::null())
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("could not authenticate against the application database");
+        }
+        if !initialized {
+            let mut state = State::load(pg.data_dir())?.context("missing pgdb.json")?;
+            state.user = Some(Credentials {
+                user: opts.user.clone(),
+                password: opts.password.clone(),
+            });
+            state.database = Some(opts.db.clone());
+            state.store(pg.data_dir())?;
+        }
         let superuser_url = pg.as_superuser().url("postgres");
         let user_url = pg.as_user(&opts.user, &opts.password).url(&opts.db);
         action(&superuser_url, &user_url, false)
@@ -223,47 +247,74 @@ fn exit_with_status(status: ExitStatus) -> ! {
 
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
-    let opts = Opts::parse();
+    let mut opts = Opts::parse();
+    let external_url = pgdb::parse_external_test_url()?;
+    if opts.data_dir.is_some() && external_url.is_some() {
+        anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
+    }
+    let initialized = if let Some(data_dir) = &opts.data_dir {
+        match State::load(data_dir)? {
+            Some(state) => {
+                let user = state.user.context("missing user in pgdb.json")?;
+                opts.db = state.database.context("missing database in pgdb.json")?;
+                opts.user = user.user;
+                opts.password = user.password;
+                opts.superuser_pw = Some(state.admin.password);
+                true
+            }
+            None => false,
+        }
+    } else {
+        false
+    };
     let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
 
     if !opts.command.is_empty() {
-        let status = with_database(&opts, |superuser_url, user_url, _| {
-            run_command(&opts, superuser_url, user_url, signals)
-        })?;
+        let status = with_database(
+            &opts,
+            initialized,
+            external_url.as_ref(),
+            |superuser_url, user_url, _| run_command(&opts, superuser_url, user_url, signals),
+        )?;
         exit_with_status(status);
     }
 
     let mut signals = signals;
-    with_database(&opts, |superuser_url, user_url, external| {
-        println!();
-        if external {
-            println!("Connected to external PostgreSQL instance.");
-        } else {
-            println!("Postgres is now running and ready to accept connections.");
-        }
-        println!();
-        println!(
-            "PGHOST={}",
-            pgdb::connection_host(superuser_url).expect("URL must have a host")
-        );
-        println!(
-            "PGPORT={}",
-            pgdb::connection_port(superuser_url).unwrap_or(5432)
-        );
-        println!("Superuser access:\n\n    {superuser_url}");
-        println!(
-            "\nA database named `{}`, owned by a user `{}` has been created.\n",
-            opts.db, opts.user
-        );
-        println!("Regular user access:\n\n    {user_url}");
-        println!("\nYou can run `psql` with either URL to connect.");
-        if external {
-            println!("\n(Using external PostgreSQL instance from PGDB_TESTS_URL)");
-        }
+    with_database(
+        &opts,
+        initialized,
+        external_url.as_ref(),
+        |superuser_url, user_url, external| {
+            println!();
+            if external {
+                println!("Connected to external PostgreSQL instance.");
+            } else {
+                println!("Postgres is now running and ready to accept connections.");
+            }
+            println!();
+            println!(
+                "PGHOST={}",
+                pgdb::connection_host(superuser_url).expect("URL must have a host")
+            );
+            println!(
+                "PGPORT={}",
+                pgdb::connection_port(superuser_url).unwrap_or(5432)
+            );
+            println!("Superuser access:\n\n    {superuser_url}");
+            println!(
+                "\nDatabase `{}`, owned by user `{}`, is ready.\n",
+                opts.db, opts.user
+            );
+            println!("Regular user access:\n\n    {user_url}");
+            println!("\nYou can run `psql` with either URL to connect.");
+            if external {
+                println!("\n(Using external PostgreSQL instance from PGDB_TESTS_URL)");
+            }
 
-        let _ = signals.forever().next();
-        Ok(())
-    })
+            let _ = signals.forever().next();
+            Ok(())
+        },
+    )
 }
 
 #[cfg(test)]

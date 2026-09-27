@@ -28,6 +28,9 @@ pgdb cargo run
 
 The wrapped command does not have to be Rust. Any program that accepts a PostgreSQL URL or the standard `PG*` variables can use the same workflow.
 
+To keep development data across launches, use `pgdb --data-dir .pgdb cargo run`.
+See [persistent databases](./pgdb_cli/README.md#persistent-databases) for details.
+
 ## Script support
 
 A script can declare its own temporary PostgreSQL database with a shebang:

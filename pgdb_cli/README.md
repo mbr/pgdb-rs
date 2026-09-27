@@ -55,6 +55,14 @@ cargo sqlx migrate run
 cargo sqlx prepare
 ```
 
+## Persistent databases
+
+Supply `--data-dir` (or `PGDB_DATA_DIR`) to retain a local cluster across launches:
+
+```sh
+pgdb --data-dir .pgdb psql
+```
+
 ## External Database Support
 
 You can use `pgdb_cli` with an existing PostgreSQL server by setting the `PGDB_TESTS_URL` environment variable:

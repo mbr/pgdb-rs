@@ -9,6 +9,18 @@ use thiserror::Error;
 /// A Postgres server error.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// Saved setup could not be read.
+    #[error("could not read pgdb.json")]
+    ReadSetup(#[source] io::Error),
+    /// Saved setup is invalid.
+    #[error("invalid pgdb.json")]
+    ParseSetup(#[source] serde_json::Error),
+    /// Saved setup could not be created.
+    #[error("could not write pgdb.json")]
+    WriteSetup(#[source] io::Error),
+    /// Saved setup could not be serialized or written.
+    #[error("could not serialize pgdb.json")]
+    SerializeSetup(#[source] serde_json::Error),
     #[error("could not find `postgres` binary")]
     FindPostgres(which::Error),
     /// Failed to find the `initdb` binary.

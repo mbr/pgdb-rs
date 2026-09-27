@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## Unreleased
+
+- Added persistent clusters via `--data-dir` / `PGDB_DATA_DIR` and `PostgresBuilder::data_dir()`,
+  with credentials saved in `pgdb.json`.
+
 ## [0.9.0] - 2026-08-19
 
 - Added an option to skip cleanup of external test fixtures.

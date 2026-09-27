@@ -48,5 +48,9 @@ client
     .expect("could not run table creation command");
 ```
 
+## Persistent clusters
+
+Use `Postgres::build().data_dir(".pgdb").start()` to retain and reuse a cluster.
+
 Note that `psql` does use the Postgres command line tools (`psql`, `initdb`) over a library, offering a higher range of
 compatibility across Postgres versions.

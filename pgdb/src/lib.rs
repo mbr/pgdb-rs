@@ -3,6 +3,7 @@
 pub mod config;
 mod db_instance;
 mod error;
+pub mod state;
 
 use std::{
     borrow::Cow,
@@ -17,6 +18,8 @@ pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
 use url::Url;
+
+use crate::state::{Credentials, State};
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
@@ -137,16 +140,20 @@ fn find_unused_port() -> io::Result<u16> {
 /// A wrapped postgres instance.
 ///
 /// Contains a handle to a running Postgres process. Once dropped, the instance will be shut down
-/// and the temporary directory containing all of its data removed.
+/// and its temporary files removed. An explicitly supplied data directory is preserved.
 #[derive(Debug)]
 pub struct Postgres {
-    /// URL for the instance with superuser credentials.
-    superuser_url: Url,
+    /// Connection URL without credentials.
+    connection_url: Url,
+    /// Administrative credentials.
+    credentials: Credentials,
     /// PostgreSQL process and its temporary directory.
     #[allow(dead_code)] // Only used for its `Drop` implementation.
     process: PostgresProcess,
     /// Path to the `psql` binary.
     psql_binary: path::PathBuf,
+    /// Directory containing the PostgreSQL cluster.
+    data_dir: path::PathBuf,
 }
 
 /// Resources owned by a PostgreSQL process.
@@ -197,8 +204,8 @@ pub struct PostgresBuilder {
     tcp: bool,
     /// Name of the superuser.
     superuser: String,
-    /// Password for the superuser.
-    superuser_pw: String,
+    /// Explicit password for the superuser.
+    superuser_pw: Option<String>,
     /// Path to `postgres` binary.
     postgres_binary: Option<path::PathBuf>,
     /// Path to `initdb` binary.
@@ -230,7 +237,7 @@ impl Postgres {
             fast: false,
             tcp: false,
             superuser: "postgres".to_string(),
-            superuser_pw: generate_random_string(),
+            superuser_pw: None,
             postgres_binary: None,
             initdb_binary: None,
             pg_isready_binary: None,
@@ -246,16 +253,13 @@ impl Postgres {
     /// Returns a postgres client with superuser credentials.
     #[inline]
     pub fn as_superuser(&self) -> PostgresClient<'_> {
-        PostgresClient {
-            instance: self,
-            client_url: self.superuser_url.clone(),
-        }
+        self.as_user(&self.credentials.user, &self.credentials.password)
     }
 
     /// Returns a postgres client that uses the given credentials.
     #[inline]
     pub fn as_user(&self, username: &str, password: &str) -> PostgresClient<'_> {
-        let mut client_url = self.superuser_url.clone();
+        let mut client_url = self.connection_url.clone();
         client_url
             .set_username(username)
             .expect("Failed to set username");
@@ -268,9 +272,14 @@ impl Postgres {
         }
     }
 
+    /// Returns the directory containing the PostgreSQL cluster.
+    pub fn data_dir(&self) -> &path::Path {
+        &self.data_dir
+    }
+
     /// Returns the superuser URL for this instance.
-    pub fn superuser_url(&self) -> &Url {
-        &self.superuser_url
+    pub fn superuser_url(&self) -> Url {
+        self.as_superuser().client_url
     }
 }
 
@@ -395,7 +404,7 @@ impl PostgresBuilder {
 
     /// Sets the postgres data directory.
     ///
-    /// If not set, a temporary directory will be used.
+    /// If not set, a temporary directory will be used. Existing clusters are reused.
     #[inline]
     pub fn data_dir<T: Into<path::PathBuf>>(&mut self, data_dir: T) -> &mut Self {
         self.data_dir = Some(data_dir.into());
@@ -500,17 +509,16 @@ impl PostgresBuilder {
         self
     }
 
-    /// Sets the password for the superuser.
+    /// Sets the initial superuser password.
     #[inline]
     pub fn superuser_pw<T: Into<String>>(&mut self, superuser_pw: T) -> &mut Self {
-        self.superuser_pw = superuser_pw.into();
+        self.superuser_pw = Some(superuser_pw.into());
         self
     }
 
     /// Starts the Postgres server.
     ///
-    /// Postgres will start using a newly created temporary directory as its data dir. The function
-    /// will only return once `pg_isready` reports the server is accepting connections.
+    /// Reuses saved setup when available and waits for authenticated database access.
     pub fn start(&self) -> Result<Postgres, Error> {
         let port = if self.tcp {
             self.port
@@ -524,11 +532,6 @@ impl PostgresBuilder {
             .clone()
             .map(Ok)
             .unwrap_or_else(|| which::which("postgres").map_err(Error::FindPostgres))?;
-        let initdb_binary = self
-            .initdb_binary
-            .clone()
-            .map(Ok)
-            .unwrap_or_else(|| which::which("initdb").map_err(Error::FindInitdb))?;
         let pg_isready_binary = self
             .pg_isready_binary
             .clone()
@@ -545,34 +548,54 @@ impl PostgresBuilder {
             .data_dir
             .clone()
             .unwrap_or_else(|| tmp_dir.path().join("db"));
+        let saved_state = State::load(&data_dir)?;
+        let initialized = saved_state.is_some();
+        let state = saved_state.unwrap_or_else(|| State {
+            admin: Credentials {
+                user: self.superuser.clone(),
+                password: self
+                    .superuser_pw
+                    .clone()
+                    .unwrap_or_else(generate_random_string),
+            },
+            user: None,
+            database: None,
+        });
 
-        let superuser_pw_file = tmp_dir.path().join("superuser-pw");
-        fs::write(&superuser_pw_file, self.superuser_pw.as_bytes())
-            .map_err(Error::WriteTemporaryPw)?;
+        if !initialized {
+            let initdb_binary = self
+                .initdb_binary
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| which::which("initdb").map_err(Error::FindInitdb))?;
+            let superuser_pw_file = tmp_dir.path().join("superuser-pw");
+            fs::write(&superuser_pw_file, state.admin.password.as_bytes())
+                .map_err(Error::WriteTemporaryPw)?;
 
-        let initdb_status = process::Command::new(initdb_binary)
-            .args([
+            let mut initdb = process::Command::new(initdb_binary);
+            initdb.args([
                 // No default locale (== 'C').
                 "--no-locale",
                 // Require a password for all users.
                 "--auth=md5",
                 // Set default encoding to UTF8.
                 "--encoding=UTF8",
-                // Do not sync data, which is fine for tests.
-                "--nosync",
-                // Path to data directory.
-                "--pgdata",
-            ])
-            .arg(&data_dir)
-            .arg("--pwfile")
-            .arg(&superuser_pw_file)
-            .arg("--username")
-            .arg(&self.superuser)
-            .status()
-            .map_err(Error::RunInitDb)?;
-
-        if !initdb_status.success() {
-            return Err(Error::InitDbFailed(initdb_status));
+            ]);
+            if self.data_dir.is_none() {
+                initdb.arg("--nosync");
+            }
+            let initdb_status = initdb
+                .arg("--pgdata")
+                .arg(&data_dir)
+                .arg("--pwfile")
+                .arg(&superuser_pw_file)
+                .arg("--username")
+                .arg(&state.admin.user)
+                .status()
+                .map_err(Error::RunInitDb)?;
+            if !initdb_status.success() {
+                return Err(Error::InitDbFailed(initdb_status));
+            }
         }
 
         // Start the database.
@@ -645,7 +668,7 @@ impl PostgresBuilder {
             }
         }
 
-        let mut superuser_url = if self.tcp {
+        let connection_url = if self.tcp {
             Url::parse(&format!("postgres://{}:{}", self.host, port))
                 .expect("Failed to construct TCP URL")
         } else {
@@ -654,18 +677,27 @@ impl PostgresBuilder {
             Url::parse(&format!("postgres://{encoded_socket_dir}:{port}"))
                 .expect("Failed to construct Unix socket URL")
         };
-        superuser_url
-            .set_username(&self.superuser)
-            .expect("Failed to set superuser username");
-        superuser_url
-            .set_password(Some(&self.superuser_pw))
-            .expect("Failed to set superuser password");
-
-        Ok(Postgres {
-            superuser_url,
+        let pg = Postgres {
+            connection_url,
+            credentials: state.admin.clone(),
             process,
             psql_binary,
-        })
+            data_dir,
+        };
+        let status = pg
+            .as_superuser()
+            .psql("postgres")
+            .args(["-Xw", "-c", "SELECT 1"])
+            .stdout(process::Stdio::null())
+            .status()
+            .map_err(Error::RunPsql)?;
+        if !status.success() {
+            return Err(Error::PsqlFailed(status));
+        }
+        if !initialized {
+            state.store(pg.data_dir())?;
+        }
+        Ok(pg)
     }
 }
 
@@ -801,15 +833,18 @@ mod tests {
             .start()
             .expect("could not build TCP postgres database");
 
-        let a_host = super::connection_host(a.superuser_url()).expect("URL must have a host");
-        let b_host = super::connection_host(b.superuser_url()).expect("URL must have a host");
-        let tcp_host = super::connection_host(tcp.superuser_url()).expect("URL must have a host");
+        let a_url = a.superuser_url();
+        let b_url = b.superuser_url();
+        let tcp_url = tcp.superuser_url();
+        let a_host = super::connection_host(&a_url).expect("URL must have a host");
+        let b_host = super::connection_host(&b_url).expect("URL must have a host");
+        let tcp_host = super::connection_host(&tcp_url).expect("URL must have a host");
 
         assert!(a_host.starts_with('/'));
         assert!(b_host.starts_with('/'));
         assert_ne!(a_host, b_host);
-        assert_eq!(super::connection_port(a.superuser_url()), Some(5432));
-        assert_eq!(super::connection_port(b.superuser_url()), Some(5432));
+        assert_eq!(super::connection_port(&a_url), Some(5432));
+        assert_eq!(super::connection_port(&b_url), Some(5432));
         assert_eq!(tcp_host, "127.0.0.1");
     }
 
