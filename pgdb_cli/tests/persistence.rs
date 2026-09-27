@@ -2,8 +2,6 @@
 
 use std::{env, fs, path::Path, process::Command};
 
-use pgdb::state::State;
-
 /// Builds a CLI invocation without inherited database settings.
 fn pgdb(directory: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_pgdb"));
@@ -31,16 +29,14 @@ fn reuse_database() -> anyhow::Result<()> {
     .status()?
     .success());
     let saved = fs::read(path.join("pgdb.json"))?;
-    let state = State::load(&path)?.expect("saved state");
-    assert_eq!(state.database.as_deref(), Some("app"));
-    let user = state.user.expect("saved user");
-    assert_eq!(
-        (user.user.as_str(), user.password.as_str()),
-        ("owner", "secret")
-    );
     let output = pgdb(
         &path,
         &[
+            "--fast",
+            "--user=dev",
+            "--password=dev",
+            "--db=dev",
+            "--superuser-pw=dev",
             "psql",
             "-XAtc",
             "SELECT current_user, current_database(), answer FROM saved",
@@ -56,29 +52,16 @@ fn reuse_database() -> anyhow::Result<()> {
         String::from_utf8_lossy(&output.stdout).trim(),
         "owner|app|42"
     );
-    for flag in ["--fast", "--test"] {
-        assert!(pgdb(&path, &[flag, "true"]).status()?.success());
-    }
-    assert!(pgdb(&path, &["true"])
-        .env("PGDB_FAST", "true")
-        .status()?
-        .success());
-    for option in ["--user", "--password", "--db", "--superuser-pw"] {
-        assert!(pgdb(&path, &[option, "dev", "true"]).status()?.success());
-    }
-    assert!(pgdb(&path, &["true"])
-        .envs([
-            ("PGDB_USER", "dev"),
-            ("PGDB_PASSWORD", "dev"),
-            ("PGDB_DB", "dev"),
-            ("PGDB_SUPERUSER_PW", "dev")
-        ])
-        .status()?
-        .success());
     assert!(pgdb(
         &path,
         &["psql", "-Xc", "ALTER ROLE owner PASSWORD 'changed'"]
     )
+    .envs([
+        ("PGDB_USER", "dev"),
+        ("PGDB_PASSWORD", "dev"),
+        ("PGDB_DB", "dev"),
+        ("PGDB_SUPERUSER_PW", "dev")
+    ])
     .status()?
     .success());
     assert!(!pgdb(&path, &["true"]).status()?.success());

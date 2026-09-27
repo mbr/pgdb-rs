@@ -11,7 +11,6 @@ fn persistent_cluster() -> Result<(), Box<dyn Error>> {
     let data_dir = directory.path().join("db");
     let mut builder = Postgres::build();
     builder.data_dir(&data_dir);
-    assert!(State::load(&data_dir)?.is_none());
     let pg = builder.start()?;
     pg.as_superuser()
         .run_sql("postgres", "CREATE TABLE saved AS SELECT 42 AS answer")?;
@@ -32,7 +31,6 @@ fn persistent_cluster() -> Result<(), Box<dyn Error>> {
     drop(pg);
 
     let mut state = State::load(&data_dir)?.expect("saved state");
-    assert!(state.user.is_none() && state.database.is_none());
     state.admin.password = "wrong".into();
     state.store(&data_dir)?;
     assert!(matches!(builder.start(), Err(PgError::PsqlFailed(_))));

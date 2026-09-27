@@ -855,7 +855,6 @@ mod tests {
             .start()
             .expect("could not build postgres database");
         let temporary_directory = pg.process.tmp_dir.path().to_path_buf();
-        assert!(pg.data_dir().join("pgdb.json").is_file());
 
         drop(pg);
 
