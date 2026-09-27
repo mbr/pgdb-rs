@@ -3,12 +3,12 @@
 pub mod config;
 mod db_instance;
 mod error;
-mod setup;
 
 use std::{
     borrow::Cow,
     env, fs, io,
     net::TcpListener,
+    os::unix::fs::OpenOptionsExt,
     path, process, thread,
     time::{Duration, Instant},
 };
@@ -17,9 +17,8 @@ pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
+use serde::{Deserialize, Serialize};
 use url::Url;
-
-use crate::setup::ClusterSetup;
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
@@ -181,6 +180,15 @@ pub struct PostgresClient<'a> {
     instance: &'a Postgres,
     /// Client URL with credentials.
     client_url: Url,
+}
+
+/// Saved credentials for restarting a cluster.
+#[derive(Deserialize, Serialize)]
+struct ClusterSetup {
+    /// Administrative role.
+    superuser: String,
+    /// Administrative password.
+    superuser_pw: String,
 }
 
 /// Builder for a postgres instance.
@@ -552,27 +560,29 @@ impl PostgresBuilder {
             .data_dir
             .clone()
             .unwrap_or_else(|| tmp_dir.path().join("db"));
-        let saved_setup = ClusterSetup::read(&data_dir)?;
-        let initialized = saved_setup.is_some();
-        let setup = match saved_setup {
-            Some(setup) => {
-                if self
-                    .superuser_pw
-                    .as_ref()
-                    .is_some_and(|password| password != &setup.superuser_pw)
-                {
-                    return Err(Error::ConflictingSuperuserPassword);
-                }
-                setup
+        let setup_path = data_dir.join("pgdb.json");
+        let saved_setup = match fs::read(&setup_path) {
+            Ok(bytes) => {
+                Some(serde_json::from_slice::<ClusterSetup>(&bytes).map_err(Error::ParseSetup)?)
             }
-            None => ClusterSetup {
-                superuser: self.superuser.clone(),
-                superuser_pw: self
-                    .superuser_pw
-                    .clone()
-                    .unwrap_or_else(generate_random_string),
-            },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(Error::ReadSetup(error)),
         };
+        let initialized = saved_setup.is_some();
+        let setup = saved_setup.unwrap_or_else(|| ClusterSetup {
+            superuser: self.superuser.clone(),
+            superuser_pw: self
+                .superuser_pw
+                .clone()
+                .unwrap_or_else(generate_random_string),
+        });
+        if self
+            .superuser_pw
+            .as_ref()
+            .is_some_and(|password| password != &setup.superuser_pw)
+        {
+            return Err(Error::ConflictingSuperuserPassword);
+        }
 
         if !initialized {
             let initdb_binary = self
@@ -713,7 +723,13 @@ impl PostgresBuilder {
             return Err(Error::PsqlFailed(status));
         }
         if !initialized {
-            setup.write(pg.data_dir())?;
+            let file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(setup_path)
+                .map_err(Error::WriteSetup)?;
+            serde_json::to_writer_pretty(file, &setup).map_err(Error::SerializeSetup)?;
         }
         Ok(pg)
     }
@@ -870,6 +886,7 @@ mod tests {
             .start()
             .expect("could not build postgres database");
         let temporary_directory = pg.process.tmp_dir.path().to_path_buf();
+        assert!(pg.data_dir().join("pgdb.json").is_file());
 
         drop(pg);
 

@@ -11,8 +11,7 @@ use std::{
     time::Duration,
 };
 
-use clap::Parser;
-use serde::{Deserialize, Serialize};
+use clap::{parser::ValueSource, CommandFactory, FromArgMatches, Parser};
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -43,15 +42,21 @@ struct Opts {
     /// Persistent cluster directory; omitted for a disposable database.
     #[arg(long, env = "PGDB_DATA_DIR", conflicts_with_all = ["fast", "test"])]
     data_dir: Option<PathBuf>,
-    /// Username for regular database user; defaults to dev for new clusters.
-    #[arg(short, long, env = "PGDB_USER")]
-    user: Option<String>,
-    /// Password for regular database user; defaults to dev for new clusters.
-    #[arg(short = 'P', long, env = "PGDB_PASSWORD", hide_env_values = true)]
-    password: Option<String>,
-    /// Name of regular user-owned database; defaults to dev for new clusters.
-    #[arg(short, long, env = "PGDB_DB")]
-    db: Option<String>,
+    /// Username for regular database user.
+    #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
+    user: String,
+    /// Password for regular database user.
+    #[arg(
+        short = 'P',
+        long,
+        env = "PGDB_PASSWORD",
+        hide_env_values = true,
+        default_value = "dev"
+    )]
+    password: String,
+    /// Name of regular user-owned database.
+    #[arg(short, long, env = "PGDB_DB", default_value = "dev")]
+    db: String,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
     #[arg(short = 'S', long)]
     superuser_pw: Option<String>,
@@ -96,54 +101,12 @@ impl Opts {
     }
 }
 
-/// Credentials for the CLI's application database.
-#[derive(Deserialize, Serialize)]
-struct Database {
-    /// Database name.
-    name: String,
-    /// Database owner.
-    user: String,
-    /// Owner's password.
-    password: String,
-}
-
 /// Runs an action while the configured database is available.
 fn with_database<T>(
     opts: &Opts,
-    action: impl FnOnce(&Url, &Url, &Database, bool) -> anyhow::Result<T>,
+    initialized: bool,
+    action: impl FnOnce(&Url, &Url, bool) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
-    if opts.data_dir.is_some() && env::var_os("PGDB_TESTS_URL").is_some() {
-        anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
-    }
-    let saved = if let Some(data_dir) = &opts.data_dir {
-        match fs::read(data_dir.join("pgdb.json")) {
-            Ok(bytes) => {
-                let setup: serde_json::Value = serde_json::from_slice(&bytes)?;
-                Some(serde_json::from_value::<Database>(
-                    setup.get("database").cloned().unwrap_or_default(),
-                )?)
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error.into()),
-        }
-    } else {
-        None
-    };
-    let initialized = saved.is_some();
-    let database = saved.unwrap_or_else(|| Database {
-        name: opts.db.clone().unwrap_or_else(|| "dev".to_string()),
-        user: opts.user.clone().unwrap_or_else(|| "dev".to_string()),
-        password: opts.password.clone().unwrap_or_else(|| "dev".to_string()),
-    });
-    for (name, supplied, stored) in [
-        ("database name", &opts.db, &database.name),
-        ("database user", &opts.user, &database.user),
-        ("database password", &opts.password, &database.password),
-    ] {
-        if supplied.as_ref().is_some_and(|value| value != stored) {
-            anyhow::bail!("{name} conflicts with pgdb.json");
-        }
-    }
     if let Ok(external_url_str) = env::var("PGDB_TESTS_URL") {
         let external_url = Url::parse(&external_url_str)?;
         if external_url.scheme() != "postgres" {
@@ -151,23 +114,18 @@ fn with_database<T>(
         }
 
         let _tmp_dir = tempfile::TempDir::new()?;
-        pgdb::create_user_and_database(
-            &external_url,
-            &database.name,
-            &database.user,
-            &database.password,
-        )?;
+        pgdb::create_user_and_database(&external_url, &opts.db, &opts.user, &opts.password)?;
 
         let mut user_url = external_url.clone();
         user_url
-            .set_username(&database.user)
+            .set_username(&opts.user)
             .expect("Failed to set username");
         user_url
-            .set_password(Some(&database.password))
+            .set_password(Some(&opts.password))
             .expect("Failed to set password");
-        user_url.set_path(&database.name);
+        user_url.set_path(&opts.db);
 
-        action(&external_url, &user_url, &database, true)
+        action(&external_url, &user_url, true)
     } else {
         let environment = pgdb::config::PostgresEnvironment::read()?;
         let mut builder = pgdb::Postgres::build();
@@ -206,14 +164,12 @@ fn with_database<T>(
 
         let pg = builder.start()?;
         if !initialized {
-            pg.as_superuser()
-                .create_user(&database.user, &database.password)?;
-            pg.as_superuser()
-                .create_database(&database.name, &database.user)?;
+            pg.as_superuser().create_user(&opts.user, &opts.password)?;
+            pg.as_superuser().create_database(&opts.db, &opts.user)?;
         }
         let status = pg
-            .as_user(&database.user, &database.password)
-            .psql(&database.name)
+            .as_user(&opts.user, &opts.password)
+            .psql(&opts.db)
             .args(["-Xw", "-c", "SELECT 1"])
             .stdout(process::Stdio::null())
             .status()?;
@@ -223,14 +179,13 @@ fn with_database<T>(
         if !initialized {
             let path = pg.data_dir().join("pgdb.json");
             let mut setup: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
-            setup["database"] = serde_json::to_value(&database)?;
+            setup["database"] =
+                serde_json::json!({"name": opts.db, "user": opts.user, "password": opts.password});
             serde_json::to_writer_pretty(fs::File::create(path)?, &setup)?;
         }
         let superuser_url = pg.as_superuser().url("postgres");
-        let user_url = pg
-            .as_user(&database.user, &database.password)
-            .url(&database.name);
-        action(&superuser_url, &user_url, &database, false)
+        let user_url = pg.as_user(&opts.user, &opts.password).url(&opts.db);
+        action(&superuser_url, &user_url, false)
     }
 }
 
@@ -239,7 +194,6 @@ fn run_command(
     opts: &Opts,
     superuser_url: &Url,
     user_url: &Url,
-    database: &Database,
     mut signals: Signals,
 ) -> anyhow::Result<ExitStatus> {
     let (program, arguments) = opts
@@ -255,9 +209,9 @@ fn run_command(
         .env("DATABASE_URL", user_url.as_str())
         .env("PGHOST", host.as_ref())
         .env("PGPORT", port.to_string())
-        .env("PGUSER", &database.user)
-        .env("PGPASSWORD", &database.password)
-        .env("PGDATABASE", &database.name);
+        .env("PGUSER", &opts.user)
+        .env("PGPASSWORD", &opts.password)
+        .env("PGDATABASE", &opts.db);
     if opts.no_tests_cleanup {
         command.env("PGDB_TESTS_CLEANUP", "false");
     }
@@ -295,18 +249,47 @@ fn exit_with_status(status: ExitStatus) -> ! {
 
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
-    let opts = Opts::parse();
+    let matches = Opts::command().get_matches();
+    let mut opts = Opts::from_arg_matches(&matches)?;
+    if opts.data_dir.is_some() && env::var_os("PGDB_TESTS_URL").is_some() {
+        anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
+    }
+    let initialized = if let Some(data_dir) = &opts.data_dir {
+        match fs::read(data_dir.join("pgdb.json")) {
+            Ok(bytes) => {
+                let setup: serde_json::Value = serde_json::from_slice(&bytes)?;
+                for (key, id, value) in [
+                    ("name", "db", &mut opts.db),
+                    ("user", "user", &mut opts.user),
+                    ("password", "password", &mut opts.password),
+                ] {
+                    let saved: String = serde_json::from_value(setup["database"][key].clone())?;
+                    if matches.value_source(id) != Some(ValueSource::DefaultValue)
+                        && *value != saved
+                    {
+                        anyhow::bail!("{id} conflicts with pgdb.json");
+                    }
+                    *value = saved;
+                }
+                true
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        }
+    } else {
+        false
+    };
     let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
 
     if !opts.command.is_empty() {
-        let status = with_database(&opts, |superuser_url, user_url, database, _| {
-            run_command(&opts, superuser_url, user_url, database, signals)
+        let status = with_database(&opts, initialized, |superuser_url, user_url, _| {
+            run_command(&opts, superuser_url, user_url, signals)
         })?;
         exit_with_status(status);
     }
 
     let mut signals = signals;
-    with_database(&opts, |superuser_url, user_url, database, external| {
+    with_database(&opts, initialized, |superuser_url, user_url, external| {
         println!();
         if external {
             println!("Connected to external PostgreSQL instance.");
@@ -325,7 +308,7 @@ fn main() -> anyhow::Result<()> {
         println!("Superuser access:\n\n    {superuser_url}");
         println!(
             "\nDatabase `{}`, owned by user `{}`, is ready.\n",
-            database.name, database.user
+            opts.db, opts.user
         );
         println!("Regular user access:\n\n    {user_url}");
         println!("\nYou can run `psql` with either URL to connect.");
