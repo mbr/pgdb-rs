@@ -60,40 +60,19 @@ cargo sqlx prepare
 Supply `--data-dir` (or `PGDB_DATA_DIR`) to retain a local cluster across launches:
 
 ```sh
-pgdb --data-dir .pgdb --user app --password secret --db app psql
 pgdb --data-dir .pgdb psql
 ```
 
-The first launch runs `initdb`, creates the user and database, verifies access, and then writes
-`pgdb.json` inside the data directory. Later launches load this file and authenticate against the
-existing cluster without rerunning setup. The server stops on exit, but the supplied directory is
-never deleted by `pgdb`. Without this option, the cluster and its `pgdb.json` are temporary.
+The server stops on exit, but the directory is preserved. After initial setup, `pgdb.json` stores
+credentials for subsequent launches. Explicit credential options must match saved values; runtime
+options such as ports are not saved. The file contains plaintext passwords with permissions `0600`:
+keep the directory private and out of Git.
 
-`pgdb.json` contains `superuser`, `superuser_pw`, and an application `database` object with `name`,
-`user`, and `password`. It is written with permissions `0600`, but contains plaintext credentials.
-Keep the directory private and add the entire directory to `.gitignore`. For example, to inspect
-its database name:
+Missing `pgdb.json` triggers `initdb`, which refuses nonempty directories. Invalid setup or failed
+authentication causes an error, without automatic repair or deletion. Remove the directory to start
+fresh, losing its data.
 
-```sh
-jq -r '.database.name' .pgdb/pgdb.json
-```
-
-On restart, omitted credentials and database names come from this file. Explicit `--user`,
-`--password`, `--db`, and `--superuser-pw` options (including their `PGDB_USER`, `PGDB_PASSWORD`,
-`PGDB_DB`, and `PGDB_SUPERUSER_PW` environment equivalents) must match saved values. New clusters
-still default to `dev` for the application database, username, and password, with a generated admin
-password. Runtime options such as port, timeouts, and `--postgres-option` are not saved; supply them
-on each launch as needed.
-
-Invalid JSON, stale credentials, missing databases, or incompatible PostgreSQL versions cause an
-error, not automatic repair. If `pgdb.json` is absent, `initdb` runs and refuses a nonempty directory.
-This includes a crash before the setup file was written. Remove the directory explicitly to start
-fresh, losing its data. Editing passwords in `pgdb.json` does not change passwords in PostgreSQL.
-
-`--data-dir` cannot be combined with `--fast`, `--test`, `PGDB_FAST=true`, or `PGDB_TESTS_URL`.
-Persistent clusters use normal durability settings unless explicitly overridden with server
-options. This feature is intended for development, not production management, backups, or automatic
-PostgreSQL major-version upgrades.
+Cannot be combined with `--fast`, `--test`, `PGDB_FAST=true`, or `PGDB_TESTS_URL`.
 
 ## External Database Support
 

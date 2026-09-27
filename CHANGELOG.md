@@ -2,13 +2,9 @@
 
 ## Unreleased
 
-- Added persistent development clusters through `--data-dir` / `PGDB_DATA_DIR` and reusable
-  `PostgresBuilder::data_dir()` directories.
-- Save setup credentials in private `pgdb.json` files for both temporary and persistent clusters.
-- Added `start_with_database()` to initialize and save an application database with its owner.
-- Validate saved credentials on restart and reject conflicting settings without modifying setup.
-- Reject fast/test mode for persistent clusters and combining `--data-dir` with `PGDB_TESTS_URL`.
-- Fixed URL credential escaping for passwords containing percent signs and other reserved characters.
+- Added persistent clusters via `--data-dir` / `PGDB_DATA_DIR` and `PostgresBuilder::data_dir()`,
+  with credentials saved in `pgdb.json` and application setup via `start_with_database()`.
+- Fixed URL escaping for credentials containing reserved characters.
 
 ## [0.9.0] - 2026-08-19
 
