@@ -200,6 +200,8 @@ pub struct PostgresBuilder {
     fast: bool,
     /// Whether to connect over TCP.
     tcp: bool,
+    /// Name of the superuser.
+    superuser: String,
     /// Explicit password for the superuser.
     superuser_pw: Option<String>,
     /// Path to `postgres` binary.
@@ -232,6 +234,7 @@ impl Postgres {
             host: "127.0.0.1".to_string(),
             fast: false,
             tcp: false,
+            superuser: "postgres".to_string(),
             superuser_pw: None,
             postgres_binary: None,
             initdb_binary: None,
@@ -402,10 +405,7 @@ impl PostgresBuilder {
 
     /// Sets the postgres data directory.
     ///
-    /// Existing clusters are reused using credentials saved in `pgdb.json`.
-    /// The directory is never removed on drop or failure. Without this setting,
-    /// a temporary directory is used and removed on drop. Cannot be combined
-    /// with [`Self::fast`].
+    /// If not set, a temporary directory will be used. Existing clusters are reused.
     #[inline]
     pub fn data_dir<T: Into<path::PathBuf>>(&mut self, data_dir: T) -> &mut Self {
         self.data_dir = Some(data_dir.into());
@@ -519,40 +519,11 @@ impl PostgresBuilder {
 
     /// Starts the Postgres server.
     ///
-    /// Initializes a new cluster or reuses setup saved in `pgdb.json`, then
-    /// verifies authenticated access. Temporary clusters are removed on drop;
-    /// explicitly supplied data directories are preserved.
+    /// Reuses saved setup when available and waits for authenticated database access.
     pub fn start(&self) -> Result<Postgres, Error> {
         if self.data_dir.is_some() && self.fast {
             return Err(Error::PersistentFastMode);
         }
-        let tmp_dir = tempfile::tempdir().map_err(Error::CreateDatabaseDir)?;
-        let data_dir = self
-            .data_dir
-            .clone()
-            .unwrap_or_else(|| tmp_dir.path().join("db"));
-        let saved_setup = ClusterSetup::read(&data_dir)?;
-        let initialized = saved_setup.is_some();
-        let setup = match saved_setup {
-            Some(setup) => {
-                if self
-                    .superuser_pw
-                    .as_ref()
-                    .is_some_and(|password| password != &setup.superuser_pw)
-                {
-                    return Err(Error::ConflictingSuperuserPassword);
-                }
-                setup
-            }
-            None => ClusterSetup {
-                superuser: "postgres".to_string(),
-                superuser_pw: self
-                    .superuser_pw
-                    .clone()
-                    .unwrap_or_else(generate_random_string),
-            },
-        };
-
         let port = if self.tcp {
             self.port
                 .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"))
@@ -576,6 +547,33 @@ impl PostgresBuilder {
             .map(Ok)
             .unwrap_or_else(|| which::which("psql").map_err(Error::FindPsql))?;
 
+        let tmp_dir = tempfile::tempdir().map_err(Error::CreateDatabaseDir)?;
+        let data_dir = self
+            .data_dir
+            .clone()
+            .unwrap_or_else(|| tmp_dir.path().join("db"));
+        let saved_setup = ClusterSetup::read(&data_dir)?;
+        let initialized = saved_setup.is_some();
+        let setup = match saved_setup {
+            Some(setup) => {
+                if self
+                    .superuser_pw
+                    .as_ref()
+                    .is_some_and(|password| password != &setup.superuser_pw)
+                {
+                    return Err(Error::ConflictingSuperuserPassword);
+                }
+                setup
+            }
+            None => ClusterSetup {
+                superuser: self.superuser.clone(),
+                superuser_pw: self
+                    .superuser_pw
+                    .clone()
+                    .unwrap_or_else(generate_random_string),
+            },
+        };
+
         if !initialized {
             let initdb_binary = self
                 .initdb_binary
@@ -587,7 +585,14 @@ impl PostgresBuilder {
                 .map_err(Error::WriteTemporaryPw)?;
 
             let mut initdb = process::Command::new(initdb_binary);
-            initdb.args(["--no-locale", "--auth=md5", "--encoding=UTF8"]);
+            initdb.args([
+                // No default locale (== 'C').
+                "--no-locale",
+                // Require a password for all users.
+                "--auth=md5",
+                // Set default encoding to UTF8.
+                "--encoding=UTF8",
+            ]);
             if self.data_dir.is_none() {
                 initdb.arg("--nosync");
             }

@@ -30,7 +30,7 @@ fn parse_postgres_option(value: &str) -> Result<(String, String), String> {
     Ok((name.to_string(), value.to_string()))
 }
 
-/// Run a development postgres database with one user owning a single DB.
+/// Create a temporary postgres database with one user owning a single DB.
 #[derive(Debug, Parser)]
 #[command(name = "pgdb", version, trailing_var_arg = true)]
 struct Opts {
@@ -53,7 +53,7 @@ struct Opts {
     #[arg(short, long, env = "PGDB_DB")]
     db: Option<String>,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
-    #[arg(short = 'S', long, env = "PGDB_SUPERUSER_PW", hide_env_values = true)]
+    #[arg(short = 'S', long)]
     superuser_pw: Option<String>,
     /// Maximum time in seconds to wait for PostgreSQL to start.
     #[arg(long, value_name = "SECONDS")]
@@ -79,7 +79,7 @@ struct Opts {
     /// Export the PostgreSQL superuser URL as PGDB_TESTS_URL.
     #[arg(short = 'E', long)]
     export_tests_url: bool,
-    /// Command to run with the database.
+    /// Command to run with the temporary database.
     #[arg(name = "command")]
     command: Vec<OsString>,
 }
