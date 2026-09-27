@@ -2,7 +2,7 @@
 
 PostgreSQL fixtures for tests and development, no containers!
 
-`pgdb` starts PostgreSQL in a temporary directory, waits until it is ready, and cleans it up when the work is done. It is available both as a Rust test-fixture library and as a command that can give any program a fresh database.
+`pgdb` starts PostgreSQL in a temporary directory, waits until it is ready, and cleans it up when the work is done. Supply `--data-dir` to keep a development database across launches. It is available both as a Rust test-fixture library and as a command that can give any program a fresh database.
 
 ## Rust test fixtures
 
@@ -27,6 +27,23 @@ pgdb cargo run
 `pgdb` supplies `DATABASE_URL`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`. It waits for the application and removes the database afterward.
 
 The wrapped command does not have to be Rust. Any program that accepts a PostgreSQL URL or the standard `PG*` variables can use the same workflow.
+
+## Persistent development databases
+
+Use the same directory on each launch to retain your database:
+
+```sh
+pgdb --data-dir .pgdb cargo run
+```
+
+The first launch initializes PostgreSQL and creates the application database. Later launches reuse
+both the data and credentials saved in `.pgdb/pgdb.json`. PostgreSQL still stops when the command
+exits; only the data directory is retained. `PGDB_DATA_DIR` is the environment variable equivalent.
+
+The directory contains plaintext credentials: keep it private and add it to `.gitignore`.
+Persistence is for development, not production management or automatic PostgreSQL upgrades.
+`--fast`, `--test`, and `PGDB_TESTS_URL` cannot be combined with `--data-dir`.
+See the [CLI documentation](./pgdb_cli/README.md#persistent-databases) for restart and failure behavior.
 
 ## Script support
 

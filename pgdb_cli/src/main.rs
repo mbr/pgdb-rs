@@ -4,12 +4,14 @@ use std::{
     env,
     ffi::OsString,
     os::unix::process::ExitStatusExt,
+    path::PathBuf,
     process::{self, ExitStatus},
     thread,
     time::Duration,
 };
 
 use clap::Parser;
+use pgdb::setup::{Database, DatabaseOptions};
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -27,7 +29,7 @@ fn parse_postgres_option(value: &str) -> Result<(String, String), String> {
     Ok((name.to_string(), value.to_string()))
 }
 
-/// Create a temporary postgres database with one user owning a single DB.
+/// Run a development postgres database with one user owning a single DB.
 #[derive(Debug, Parser)]
 #[command(name = "pgdb", version, trailing_var_arg = true)]
 struct Opts {
@@ -37,23 +39,20 @@ struct Opts {
     /// TCP port to use; implies --tcp.
     #[arg(short, long)]
     port: Option<u16>,
-    /// Username for regular database user.
-    #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
-    user: String,
-    /// Password for regular database user.
-    #[arg(
-        short = 'P',
-        long,
-        env = "PGDB_PASSWORD",
-        hide_env_values = true,
-        default_value = "dev"
-    )]
-    password: String,
-    /// Name of regular user-owned database.
-    #[arg(short, long, env = "PGDB_DB", default_value = "dev")]
-    db: String,
+    /// Persistent cluster directory; omitted for a disposable database.
+    #[arg(long, env = "PGDB_DATA_DIR", conflicts_with_all = ["fast", "test"])]
+    data_dir: Option<PathBuf>,
+    /// Username for regular database user; defaults to dev for new clusters.
+    #[arg(short, long, env = "PGDB_USER")]
+    user: Option<String>,
+    /// Password for regular database user; defaults to dev for new clusters.
+    #[arg(short = 'P', long, env = "PGDB_PASSWORD", hide_env_values = true)]
+    password: Option<String>,
+    /// Name of regular user-owned database; defaults to dev for new clusters.
+    #[arg(short, long, env = "PGDB_DB")]
+    db: Option<String>,
     /// Password for the superuser ("postgres") account, default is to generate randomly.
-    #[arg(short = 'S', long)]
+    #[arg(short = 'S', long, env = "PGDB_SUPERUSER_PW", hide_env_values = true)]
     superuser_pw: Option<String>,
     /// Maximum time in seconds to wait for PostgreSQL to start.
     #[arg(long, value_name = "SECONDS")]
@@ -79,7 +78,7 @@ struct Opts {
     /// Export the PostgreSQL superuser URL as PGDB_TESTS_URL.
     #[arg(short = 'E', long)]
     export_tests_url: bool,
-    /// Command to run with the temporary database.
+    /// Command to run with the database.
     #[arg(name = "command")]
     command: Vec<OsString>,
 }
@@ -99,8 +98,11 @@ impl Opts {
 /// Runs an action while the configured database is available.
 fn with_database<T>(
     opts: &Opts,
-    action: impl FnOnce(&Url, &Url, bool) -> anyhow::Result<T>,
+    action: impl FnOnce(&Url, &Url, &Database, bool) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
+    if opts.data_dir.is_some() && env::var_os("PGDB_TESTS_URL").is_some() {
+        anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
+    }
     if let Ok(external_url_str) = env::var("PGDB_TESTS_URL") {
         let external_url = Url::parse(&external_url_str)?;
         if external_url.scheme() != "postgres" {
@@ -108,22 +110,35 @@ fn with_database<T>(
         }
 
         let _tmp_dir = tempfile::TempDir::new()?;
-        pgdb::create_user_and_database(&external_url, &opts.db, &opts.user, &opts.password)?;
+        let database = Database {
+            name: opts.db.clone().unwrap_or_else(|| "dev".to_string()),
+            user: opts.user.clone().unwrap_or_else(|| "dev".to_string()),
+            password: opts.password.clone().unwrap_or_else(|| "dev".to_string()),
+        };
+        pgdb::create_user_and_database(
+            &external_url,
+            &database.name,
+            &database.user,
+            &database.password,
+        )?;
 
         let mut user_url = external_url.clone();
         user_url
-            .set_username(&opts.user)
+            .set_username(&database.user.replace('%', "%25"))
             .expect("Failed to set username");
         user_url
-            .set_password(Some(&opts.password))
+            .set_password(Some(&database.password.replace('%', "%25")))
             .expect("Failed to set password");
-        user_url.set_path(&opts.db);
+        user_url.set_path(&database.name);
 
-        action(&external_url, &user_url, true)
+        action(&external_url, &user_url, &database, true)
     } else {
         let environment = pgdb::config::PostgresEnvironment::read()?;
         let mut builder = pgdb::Postgres::build();
         environment.apply(&mut builder);
+        if let Some(data_dir) = &opts.data_dir {
+            builder.data_dir(data_dir);
+        }
 
         if let Some(superuser_pw) = &opts.superuser_pw {
             builder.superuser_pw(superuser_pw);
@@ -153,13 +168,17 @@ fn with_database<T>(
             }
         }
 
-        let pg = builder.start()?;
-        pg.as_superuser().create_user(&opts.user, &opts.password)?;
-        pg.as_superuser().create_database(&opts.db, &opts.user)?;
-
+        let pg = builder.start_with_database(&DatabaseOptions {
+            name: opts.db.clone(),
+            user: opts.user.clone(),
+            password: opts.password.clone(),
+        })?;
+        let database = pg.database().expect("application database was requested");
         let superuser_url = pg.as_superuser().url("postgres");
-        let user_url = pg.as_user(&opts.user, &opts.password).url(&opts.db);
-        action(&superuser_url, &user_url, false)
+        let user_url = pg
+            .as_user(&database.user, &database.password)
+            .url(&database.name);
+        action(&superuser_url, &user_url, database, false)
     }
 }
 
@@ -168,6 +187,7 @@ fn run_command(
     opts: &Opts,
     superuser_url: &Url,
     user_url: &Url,
+    database: &Database,
     mut signals: Signals,
 ) -> anyhow::Result<ExitStatus> {
     let (program, arguments) = opts
@@ -183,9 +203,9 @@ fn run_command(
         .env("DATABASE_URL", user_url.as_str())
         .env("PGHOST", host.as_ref())
         .env("PGPORT", port.to_string())
-        .env("PGUSER", &opts.user)
-        .env("PGPASSWORD", &opts.password)
-        .env("PGDATABASE", &opts.db);
+        .env("PGUSER", &database.user)
+        .env("PGPASSWORD", &database.password)
+        .env("PGDATABASE", &database.name);
     if opts.no_tests_cleanup {
         command.env("PGDB_TESTS_CLEANUP", "false");
     }
@@ -227,14 +247,14 @@ fn main() -> anyhow::Result<()> {
     let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
 
     if !opts.command.is_empty() {
-        let status = with_database(&opts, |superuser_url, user_url, _| {
-            run_command(&opts, superuser_url, user_url, signals)
+        let status = with_database(&opts, |superuser_url, user_url, database, _| {
+            run_command(&opts, superuser_url, user_url, database, signals)
         })?;
         exit_with_status(status);
     }
 
     let mut signals = signals;
-    with_database(&opts, |superuser_url, user_url, external| {
+    with_database(&opts, |superuser_url, user_url, database, external| {
         println!();
         if external {
             println!("Connected to external PostgreSQL instance.");
@@ -252,8 +272,8 @@ fn main() -> anyhow::Result<()> {
         );
         println!("Superuser access:\n\n    {superuser_url}");
         println!(
-            "\nA database named `{}`, owned by a user `{}` has been created.\n",
-            opts.db, opts.user
+            "\nDatabase `{}`, owned by user `{}`, is ready.\n",
+            database.name, database.user
         );
         println!("Regular user access:\n\n    {user_url}");
         println!("\nYou can run `psql` with either URL to connect.");

@@ -3,6 +3,7 @@
 pub mod config;
 mod db_instance;
 mod error;
+pub mod setup;
 
 use std::{
     borrow::Cow,
@@ -17,6 +18,8 @@ pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
 use url::Url;
+
+use crate::setup::{ClusterSetup, Database, DatabaseOptions};
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
@@ -43,8 +46,12 @@ pub fn connection_port(url: &Url) -> Option<u16> {
 pub fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
     // TODO: Do not use which, allow passing in.
     let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
-    let username = superuser_url.username();
-    let password = superuser_url.password().unwrap_or_default();
+    let username = percent_decode_str(superuser_url.username())
+        .decode_utf8_lossy()
+        .into_owned();
+    let password = percent_decode_str(superuser_url.password().unwrap_or_default())
+        .decode_utf8_lossy()
+        .into_owned();
     let host = connection_host(superuser_url).expect("URL must have a host");
     let port = connection_port(superuser_url).unwrap_or(5432);
 
@@ -137,7 +144,7 @@ fn find_unused_port() -> io::Result<u16> {
 /// A wrapped postgres instance.
 ///
 /// Contains a handle to a running Postgres process. Once dropped, the instance will be shut down
-/// and the temporary directory containing all of its data removed.
+/// and its temporary files removed. An explicitly supplied data directory is preserved.
 #[derive(Debug)]
 pub struct Postgres {
     /// URL for the instance with superuser credentials.
@@ -147,6 +154,8 @@ pub struct Postgres {
     process: PostgresProcess,
     /// Path to the `psql` binary.
     psql_binary: path::PathBuf,
+    /// Database created during cluster setup.
+    database: Option<Database>,
 }
 
 /// Resources owned by a PostgreSQL process.
@@ -195,10 +204,8 @@ pub struct PostgresBuilder {
     fast: bool,
     /// Whether to connect over TCP.
     tcp: bool,
-    /// Name of the superuser.
-    superuser: String,
-    /// Password for the superuser.
-    superuser_pw: String,
+    /// Explicit password for the superuser.
+    superuser_pw: Option<String>,
     /// Path to `postgres` binary.
     postgres_binary: Option<path::PathBuf>,
     /// Path to `initdb` binary.
@@ -229,8 +236,7 @@ impl Postgres {
             host: "127.0.0.1".to_string(),
             fast: false,
             tcp: false,
-            superuser: "postgres".to_string(),
-            superuser_pw: generate_random_string(),
+            superuser_pw: None,
             postgres_binary: None,
             initdb_binary: None,
             pg_isready_binary: None,
@@ -256,16 +262,22 @@ impl Postgres {
     #[inline]
     pub fn as_user(&self, username: &str, password: &str) -> PostgresClient<'_> {
         let mut client_url = self.superuser_url.clone();
+        // URL setters preserve percent escapes, but these credentials are raw.
         client_url
-            .set_username(username)
+            .set_username(&username.replace('%', "%25"))
             .expect("Failed to set username");
         client_url
-            .set_password(Some(password))
+            .set_password(Some(&password.replace('%', "%25")))
             .expect("Failed to set password");
         PostgresClient {
             instance: self,
             client_url,
         }
+    }
+
+    /// Returns the database created during cluster setup, if any.
+    pub fn database(&self) -> Option<&Database> {
+        self.database.as_ref()
     }
 
     /// Returns the superuser URL for this instance.
@@ -278,17 +290,23 @@ impl<'a> PostgresClient<'a> {
     /// Runs a `psql` command against the database.
     ///
     /// Creates a command that runs `psql -h (host) -p (port) -U (username) -d (database)` with
-    /// `PGPASSWORD` set.
+    /// `PGPASSWORD` set. Ignores `psqlrc`, disables password prompts, and stops
+    /// on SQL errors.
     pub fn psql(&self, database: &str) -> process::Command {
         let mut cmd = process::Command::new(&self.instance.psql_binary);
 
-        let username = self.client_url.username();
-        let password = self.client_url.password().unwrap_or_default();
+        let username = percent_decode_str(self.client_url.username())
+            .decode_utf8_lossy()
+            .into_owned();
+        let password = percent_decode_str(self.client_url.password().unwrap_or_default())
+            .decode_utf8_lossy()
+            .into_owned();
 
         let host = connection_host(&self.client_url).expect("Client URL must have a host");
         let port = connection_port(&self.client_url).expect("Client URL must have a port");
 
-        cmd.arg("-h")
+        cmd.args(["-X", "--no-password", "--set=ON_ERROR_STOP=1"])
+            .arg("-h")
             .arg(host.as_ref())
             .arg("-p")
             .arg(port.to_string())
@@ -330,6 +348,20 @@ impl<'a> PostgresClient<'a> {
             return Err(Error::PsqlFailed(status));
         }
 
+        Ok(())
+    }
+
+    /// Verifies authenticated database access without printing query results.
+    fn verify_connection(&self, database: &str) -> Result<(), Error> {
+        let status = self
+            .psql(database)
+            .args(["-c", "SELECT 1"])
+            .stdout(process::Stdio::null())
+            .status()
+            .map_err(Error::RunPsql)?;
+        if !status.success() {
+            return Err(Error::PsqlFailed(status));
+        }
         Ok(())
     }
 
@@ -395,7 +427,10 @@ impl PostgresBuilder {
 
     /// Sets the postgres data directory.
     ///
-    /// If not set, a temporary directory will be used.
+    /// Existing clusters are reused using credentials saved in `pgdb.json`.
+    /// The directory is never removed on drop or failure. Without this setting,
+    /// a temporary directory is used and removed on drop. Cannot be combined
+    /// with [`Self::fast`].
     #[inline]
     pub fn data_dir<T: Into<path::PathBuf>>(&mut self, data_dir: T) -> &mut Self {
         self.data_dir = Some(data_dir.into());
@@ -503,15 +538,47 @@ impl PostgresBuilder {
     /// Sets the password for the superuser.
     #[inline]
     pub fn superuser_pw<T: Into<String>>(&mut self, superuser_pw: T) -> &mut Self {
-        self.superuser_pw = superuser_pw.into();
+        self.superuser_pw = Some(superuser_pw.into());
         self
     }
 
     /// Starts the Postgres server.
     ///
-    /// Postgres will start using a newly created temporary directory as its data dir. The function
-    /// will only return once `pg_isready` reports the server is accepting connections.
+    /// Initializes a new cluster or reuses setup saved in `pgdb.json`, then
+    /// verifies authenticated access. Temporary clusters are removed on drop;
+    /// explicitly supplied data directories are preserved.
     pub fn start(&self) -> Result<Postgres, Error> {
+        self.start_inner(None)
+    }
+
+    /// Starts a cluster with an application database owned by a regular user.
+    ///
+    /// Setup is saved only after creating and verifying the database. On reuse,
+    /// unspecified options use saved credentials and conflicting options fail.
+    pub fn start_with_database(&self, database: &DatabaseOptions) -> Result<Postgres, Error> {
+        self.start_inner(Some(database))
+    }
+
+    /// Starts PostgreSQL and completes or verifies the saved cluster setup.
+    fn start_inner(&self, database: Option<&DatabaseOptions>) -> Result<Postgres, Error> {
+        if self.data_dir.is_some() && self.fast {
+            return Err(Error::PersistentFastMode);
+        }
+        let tmp_dir = tempfile::tempdir().map_err(Error::CreateDatabaseDir)?;
+        let data_dir = self
+            .data_dir
+            .clone()
+            .unwrap_or_else(|| tmp_dir.path().join("db"));
+        let saved_setup = ClusterSetup::read(&data_dir)?;
+        let initialized = saved_setup.is_some();
+        let setup = match saved_setup {
+            Some(setup) => {
+                setup.validate(self.superuser_pw.as_deref(), database)?;
+                setup
+            }
+            None => ClusterSetup::new(self.superuser_pw.as_deref(), database),
+        };
+
         let port = if self.tcp {
             self.port
                 .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"))
@@ -524,11 +591,6 @@ impl PostgresBuilder {
             .clone()
             .map(Ok)
             .unwrap_or_else(|| which::which("postgres").map_err(Error::FindPostgres))?;
-        let initdb_binary = self
-            .initdb_binary
-            .clone()
-            .map(Ok)
-            .unwrap_or_else(|| which::which("initdb").map_err(Error::FindInitdb))?;
         let pg_isready_binary = self
             .pg_isready_binary
             .clone()
@@ -540,39 +602,33 @@ impl PostgresBuilder {
             .map(Ok)
             .unwrap_or_else(|| which::which("psql").map_err(Error::FindPsql))?;
 
-        let tmp_dir = tempfile::tempdir().map_err(Error::CreateDatabaseDir)?;
-        let data_dir = self
-            .data_dir
-            .clone()
-            .unwrap_or_else(|| tmp_dir.path().join("db"));
+        if !initialized {
+            let initdb_binary = self
+                .initdb_binary
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| which::which("initdb").map_err(Error::FindInitdb))?;
+            let superuser_pw_file = tmp_dir.path().join("superuser-pw");
+            fs::write(&superuser_pw_file, setup.superuser_pw.as_bytes())
+                .map_err(Error::WriteTemporaryPw)?;
 
-        let superuser_pw_file = tmp_dir.path().join("superuser-pw");
-        fs::write(&superuser_pw_file, self.superuser_pw.as_bytes())
-            .map_err(Error::WriteTemporaryPw)?;
-
-        let initdb_status = process::Command::new(initdb_binary)
-            .args([
-                // No default locale (== 'C').
-                "--no-locale",
-                // Require a password for all users.
-                "--auth=md5",
-                // Set default encoding to UTF8.
-                "--encoding=UTF8",
-                // Do not sync data, which is fine for tests.
-                "--nosync",
-                // Path to data directory.
-                "--pgdata",
-            ])
-            .arg(&data_dir)
-            .arg("--pwfile")
-            .arg(&superuser_pw_file)
-            .arg("--username")
-            .arg(&self.superuser)
-            .status()
-            .map_err(Error::RunInitDb)?;
-
-        if !initdb_status.success() {
-            return Err(Error::InitDbFailed(initdb_status));
+            let mut initdb = process::Command::new(initdb_binary);
+            initdb.args(["--no-locale", "--auth=md5", "--encoding=UTF8"]);
+            if self.data_dir.is_none() {
+                initdb.arg("--nosync");
+            }
+            let initdb_status = initdb
+                .arg("--pgdata")
+                .arg(&data_dir)
+                .arg("--pwfile")
+                .arg(&superuser_pw_file)
+                .arg("--username")
+                .arg(&setup.superuser)
+                .status()
+                .map_err(Error::RunInitDb)?;
+            if !initdb_status.success() {
+                return Err(Error::InitDbFailed(initdb_status));
+            }
         }
 
         // Start the database.
@@ -655,17 +711,34 @@ impl PostgresBuilder {
                 .expect("Failed to construct Unix socket URL")
         };
         superuser_url
-            .set_username(&self.superuser)
+            .set_username(&setup.superuser.replace('%', "%25"))
             .expect("Failed to set superuser username");
         superuser_url
-            .set_password(Some(&self.superuser_pw))
+            .set_password(Some(&setup.superuser_pw.replace('%', "%25")))
             .expect("Failed to set superuser password");
 
-        Ok(Postgres {
+        let mut pg = Postgres {
             superuser_url,
             process,
             psql_binary,
-        })
+            database: None,
+        };
+        pg.as_superuser().verify_connection("postgres")?;
+        if let Some(database) = &setup.database {
+            if !initialized {
+                pg.as_superuser()
+                    .create_user(&database.user, &database.password)?;
+                pg.as_superuser()
+                    .create_database(&database.name, &database.user)?;
+            }
+            pg.as_user(&database.user, &database.password)
+                .verify_connection(&database.name)?;
+        }
+        if !initialized {
+            setup.write(&data_dir)?;
+        }
+        pg.database = setup.database;
+        Ok(pg)
     }
 }
 

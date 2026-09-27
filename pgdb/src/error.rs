@@ -9,6 +9,27 @@ use thiserror::Error;
 /// A Postgres server error.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// Persistent clusters cannot use disposable durability settings.
+    #[error("fast mode cannot be used with an explicit data directory")]
+    PersistentFastMode,
+    /// Saved setup could not be read.
+    #[error("could not read pgdb.json")]
+    ReadSetup(#[source] io::Error),
+    /// Saved setup is invalid.
+    #[error("invalid pgdb.json")]
+    ParseSetup(#[source] serde_json::Error),
+    /// Saved setup could not be created.
+    #[error("could not write pgdb.json")]
+    WriteSetup(#[source] io::Error),
+    /// Saved setup could not be serialized or written.
+    #[error("could not serialize pgdb.json")]
+    SerializeSetup(#[source] serde_json::Error),
+    /// An explicit setting disagrees with saved setup.
+    #[error("{0} conflicts with pgdb.json")]
+    ConflictingSetup(&'static str),
+    /// A requested application database was not part of saved setup.
+    #[error("pgdb.json does not contain an application database")]
+    MissingSetupDatabase,
     #[error("could not find `postgres` binary")]
     FindPostgres(which::Error),
     /// Failed to find the `initdb` binary.
