@@ -3,7 +3,6 @@
 use std::{
     env,
     ffi::OsString,
-    fs, io,
     os::unix::process::ExitStatusExt,
     path::PathBuf,
     process::{self, ExitStatus},
@@ -11,7 +10,9 @@ use std::{
     time::Duration,
 };
 
+use anyhow::Context;
 use clap::{parser::ValueSource, CommandFactory, FromArgMatches, Parser};
+use pgdb::state::{Credentials, State};
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -177,11 +178,13 @@ fn with_database<T>(
             anyhow::bail!("could not authenticate against the application database");
         }
         if !initialized {
-            let path = pg.data_dir().join("pgdb.json");
-            let mut setup: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
-            setup["database"] =
-                serde_json::json!({"name": opts.db, "user": opts.user, "password": opts.password});
-            serde_json::to_writer_pretty(fs::File::create(path)?, &setup)?;
+            let mut state = State::load(pg.data_dir())?.context("missing pgdb.json")?;
+            state.user = Some(Credentials {
+                user: opts.user.clone(),
+                password: opts.password.clone(),
+            });
+            state.database = Some(opts.db.clone());
+            state.store(pg.data_dir())?;
         }
         let superuser_url = pg.as_superuser().url("postgres");
         let user_url = pg.as_user(&opts.user, &opts.password).url(&opts.db);
@@ -255,15 +258,15 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
     }
     let initialized = if let Some(data_dir) = &opts.data_dir {
-        match fs::read(data_dir.join("pgdb.json")) {
-            Ok(bytes) => {
-                let setup: serde_json::Value = serde_json::from_slice(&bytes)?;
-                for (key, id, value) in [
-                    ("name", "db", &mut opts.db),
-                    ("user", "user", &mut opts.user),
-                    ("password", "password", &mut opts.password),
+        match State::load(data_dir)? {
+            Some(state) => {
+                let user = state.user.context("missing user in pgdb.json")?;
+                let database = state.database.context("missing database in pgdb.json")?;
+                for (id, value, saved) in [
+                    ("db", &mut opts.db, database),
+                    ("user", &mut opts.user, user.user),
+                    ("password", &mut opts.password, user.password),
                 ] {
-                    let saved: String = serde_json::from_value(setup["database"][key].clone())?;
                     if matches.value_source(id) != Some(ValueSource::DefaultValue)
                         && *value != saved
                     {
@@ -273,8 +276,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 true
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
-            Err(error) => return Err(error.into()),
+            None => false,
         }
     } else {
         false

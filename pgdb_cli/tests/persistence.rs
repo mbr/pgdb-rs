@@ -2,6 +2,8 @@
 
 use std::{env, fs, path::Path, process::Command};
 
+use pgdb::state::State;
+
 /// Builds a CLI invocation without inherited database settings.
 fn pgdb(directory: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_pgdb"));
@@ -29,6 +31,13 @@ fn reuse_database() -> anyhow::Result<()> {
     .status()?
     .success());
     let saved = fs::read(path.join("pgdb.json"))?;
+    let state = State::load(&path)?.expect("saved state");
+    assert_eq!(state.database.as_deref(), Some("app"));
+    let user = state.user.expect("saved user");
+    assert_eq!(
+        (user.user.as_str(), user.password.as_str()),
+        ("owner", "secret")
+    );
     let output = pgdb(
         &path,
         &[

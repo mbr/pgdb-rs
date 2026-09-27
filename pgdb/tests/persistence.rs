@@ -2,7 +2,7 @@
 
 use std::{error::Error, fs, os::unix::fs::PermissionsExt};
 
-use pgdb::{Error as PgError, Postgres};
+use pgdb::{state::State, Error as PgError, Postgres};
 
 /// Checks credential reuse, data retention, and failure without repair.
 #[test]
@@ -11,6 +11,7 @@ fn persistent_cluster() -> Result<(), Box<dyn Error>> {
     let data_dir = directory.path().join("db");
     let mut builder = Postgres::build();
     builder.data_dir(&data_dir);
+    assert!(State::load(&data_dir)?.is_none());
     let pg = builder.start()?;
     pg.as_superuser()
         .run_sql("postgres", "CREATE TABLE saved AS SELECT 42 AS answer")?;
@@ -30,9 +31,10 @@ fn persistent_cluster() -> Result<(), Box<dyn Error>> {
     assert_eq!(fs::read(&path)?, saved);
     drop(pg);
 
-    let mut invalid: serde_json::Value = serde_json::from_slice(&saved)?;
-    invalid["superuser_pw"] = "wrong".into();
-    fs::write(&path, serde_json::to_vec(&invalid)?)?;
+    let mut state = State::load(&data_dir)?.expect("saved state");
+    assert!(state.user.is_none() && state.database.is_none());
+    state.admin.password = "wrong".into();
+    state.store(&data_dir)?;
     assert!(matches!(builder.start(), Err(PgError::PsqlFailed(_))));
     assert!(!data_dir.join("postmaster.pid").exists());
     fs::write(&path, "{")?;

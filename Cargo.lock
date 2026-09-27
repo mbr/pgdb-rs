@@ -412,7 +412,6 @@ dependencies = [
  "clap",
  "libc",
  "pgdb",
- "serde_json",
  "signal-hook",
  "tempfile",
  "url",

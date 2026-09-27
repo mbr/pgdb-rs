@@ -3,12 +3,12 @@
 pub mod config;
 mod db_instance;
 mod error;
+pub mod state;
 
 use std::{
     borrow::Cow,
     env, fs, io,
     net::TcpListener,
-    os::unix::fs::OpenOptionsExt,
     path, process, thread,
     time::{Duration, Instant},
 };
@@ -17,8 +17,9 @@ pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
-use serde::{Deserialize, Serialize};
 use url::Url;
+
+use crate::state::{Credentials, State};
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
@@ -180,15 +181,6 @@ pub struct PostgresClient<'a> {
     instance: &'a Postgres,
     /// Client URL with credentials.
     client_url: Url,
-}
-
-/// Saved credentials for restarting a cluster.
-#[derive(Deserialize, Serialize)]
-struct AdminCredentials {
-    /// Administrative role.
-    superuser: String,
-    /// Administrative password.
-    superuser_pw: String,
 }
 
 /// Builder for a postgres instance.
@@ -557,26 +549,23 @@ impl PostgresBuilder {
             .data_dir
             .clone()
             .unwrap_or_else(|| tmp_dir.path().join("db"));
-        let setup_path = data_dir.join("pgdb.json");
-        let saved_setup = match fs::read(&setup_path) {
-            Ok(bytes) => Some(
-                serde_json::from_slice::<AdminCredentials>(&bytes).map_err(Error::ParseSetup)?,
-            ),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(Error::ReadSetup(error)),
-        };
-        let initialized = saved_setup.is_some();
-        let setup = saved_setup.unwrap_or_else(|| AdminCredentials {
-            superuser: self.superuser.clone(),
-            superuser_pw: self
-                .superuser_pw
-                .clone()
-                .unwrap_or_else(generate_random_string),
+        let saved_state = State::load(&data_dir)?;
+        let initialized = saved_state.is_some();
+        let state = saved_state.unwrap_or_else(|| State {
+            admin: Credentials {
+                user: self.superuser.clone(),
+                password: self
+                    .superuser_pw
+                    .clone()
+                    .unwrap_or_else(generate_random_string),
+            },
+            user: None,
+            database: None,
         });
         if self
             .superuser_pw
             .as_ref()
-            .is_some_and(|password| password != &setup.superuser_pw)
+            .is_some_and(|password| password != &state.admin.password)
         {
             return Err(Error::ConflictingSuperuserPassword);
         }
@@ -588,7 +577,7 @@ impl PostgresBuilder {
                 .map(Ok)
                 .unwrap_or_else(|| which::which("initdb").map_err(Error::FindInitdb))?;
             let superuser_pw_file = tmp_dir.path().join("superuser-pw");
-            fs::write(&superuser_pw_file, setup.superuser_pw.as_bytes())
+            fs::write(&superuser_pw_file, state.admin.password.as_bytes())
                 .map_err(Error::WriteTemporaryPw)?;
 
             let mut initdb = process::Command::new(initdb_binary);
@@ -609,7 +598,7 @@ impl PostgresBuilder {
                 .arg("--pwfile")
                 .arg(&superuser_pw_file)
                 .arg("--username")
-                .arg(&setup.superuser)
+                .arg(&state.admin.user)
                 .status()
                 .map_err(Error::RunInitDb)?;
             if !initdb_status.success() {
@@ -697,10 +686,10 @@ impl PostgresBuilder {
                 .expect("Failed to construct Unix socket URL")
         };
         superuser_url
-            .set_username(&setup.superuser)
+            .set_username(&state.admin.user)
             .expect("Failed to set superuser username");
         superuser_url
-            .set_password(Some(&setup.superuser_pw))
+            .set_password(Some(&state.admin.password))
             .expect("Failed to set superuser password");
 
         let pg = Postgres {
@@ -720,13 +709,7 @@ impl PostgresBuilder {
             return Err(Error::PsqlFailed(status));
         }
         if !initialized {
-            let file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(setup_path)
-                .map_err(Error::WriteSetup)?;
-            serde_json::to_writer_pretty(file, &setup).map_err(Error::SerializeSetup)?;
+            state.store(pg.data_dir())?;
         }
         Ok(pg)
     }
