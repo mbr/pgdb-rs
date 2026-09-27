@@ -37,7 +37,7 @@ fn commands_reuse_saved_database_and_credentials() {
         "--user",
         "owner",
         "--password",
-        "secret:@ %",
+        "secret",
         "--db",
         "app",
         "psql",
@@ -57,7 +57,7 @@ fn commands_reuse_saved_database_and_credentials() {
         .lines()
         .any(|line| line == "owner|app|42"));
     let output = success(pgdb().arg("--data-dir").arg(&data_dir)
-        .args(["sh", "-c", "test \"$PGUSER\" = owner && test \"$PGDATABASE\" = app && test \"$PGPASSWORD\" = 'secret:@ %' && psql -XAt \"$DATABASE_URL\" -c 'SELECT answer FROM saved'"]));
+        .args(["sh", "-c", "test \"$PGUSER\" = owner && test \"$PGDATABASE\" = app && test \"$PGPASSWORD\" = secret && psql -XAt \"$DATABASE_URL\" -c 'SELECT answer FROM saved'"]));
     assert!(String::from_utf8_lossy(&output.stdout)
         .lines()
         .any(|line| line == "42"));
@@ -72,6 +72,46 @@ fn commands_reuse_saved_database_and_credentials() {
         assert!(!output.status.success());
         assert!(String::from_utf8_lossy(&output.stderr).contains("conflicts with pgdb.json"));
     }
+    success(pgdb().arg("--data-dir").arg(&data_dir).args([
+        "psql",
+        "-Xc",
+        "ALTER ROLE owner PASSWORD 'changed'",
+    ]));
+    let output = pgdb()
+        .arg("--data-dir")
+        .arg(&data_dir)
+        .arg("true")
+        .output()
+        .expect("pgdb must run");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("could not authenticate"));
+    assert_eq!(
+        fs::read(data_dir.join("pgdb.json")).expect("setup must remain"),
+        setup
+    );
+}
+
+/// Ensures interrupted CLI setup is not treated as a completed database.
+#[test]
+fn incomplete_application_setup_fails_on_restart() {
+    let directory = tempfile::tempdir().expect("temporary directory must be created");
+    let data_dir = directory.path().join("db");
+    let output = pgdb()
+        .arg("--data-dir")
+        .arg(&data_dir)
+        .args(["--user", "postgres", "true"])
+        .output()
+        .expect("pgdb must run");
+    assert!(!output.status.success());
+    let setup = fs::read(data_dir.join("pgdb.json")).expect("admin credentials must exist");
+    let output = pgdb()
+        .arg("--data-dir")
+        .arg(&data_dir)
+        .arg("true")
+        .output()
+        .expect("pgdb must run");
+    assert!(!output.status.success());
+    assert!(!data_dir.join("postmaster.pid").exists());
     assert_eq!(
         fs::read(data_dir.join("pgdb.json")).expect("setup must remain"),
         setup

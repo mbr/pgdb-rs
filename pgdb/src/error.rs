@@ -24,12 +24,9 @@ pub enum Error {
     /// Saved setup could not be serialized or written.
     #[error("could not serialize pgdb.json")]
     SerializeSetup(#[source] serde_json::Error),
-    /// An explicit setting disagrees with saved setup.
-    #[error("{0} conflicts with pgdb.json")]
-    ConflictingSetup(&'static str),
-    /// A requested application database was not part of saved setup.
-    #[error("pgdb.json does not contain an application database")]
-    MissingSetupDatabase,
+    /// The supplied admin password disagrees with saved credentials.
+    #[error("superuser password conflicts with pgdb.json")]
+    ConflictingSuperuserPassword,
     #[error("could not find `postgres` binary")]
     FindPostgres(which::Error),
     /// Failed to find the `initdb` binary.

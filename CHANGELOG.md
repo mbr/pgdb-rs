@@ -3,8 +3,7 @@
 ## Unreleased
 
 - Added persistent clusters via `--data-dir` / `PGDB_DATA_DIR` and `PostgresBuilder::data_dir()`,
-  with credentials saved in `pgdb.json` and application setup via `start_with_database()`.
-- Fixed URL escaping for credentials containing reserved characters.
+  with credentials saved in `pgdb.json`.
 
 ## [0.9.0] - 2026-08-19
 

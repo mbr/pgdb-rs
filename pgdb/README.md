@@ -50,23 +50,10 @@ client
 
 ## Persistent clusters
 
-`data_dir()` preserves the cluster on drop; `start_with_database()` creates or reuses its application
-database and credentials:
-
-```no_run
-use pgdb::setup::DatabaseOptions;
-
-let pg = pgdb::Postgres::build()
-    .data_dir(".pgdb")
-    .start_with_database(&DatabaseOptions::default())
-    .expect("could not start development database");
-```
-
-`DatabaseOptions` defaults to saved settings, or `dev` for a new cluster. Explicit credentials must
-match saved values. Plain `start()` initializes only the admin account; later setup isn't recorded.
-Both modes save plaintext credentials in `pgdb.json` (`0600`). Keep the directory out of Git.
-Invalid setup returns an error without repair or deletion. `data_dir()` cannot be combined with
-`fast()`.
+Use `Postgres::build().data_dir(".pgdb").start()` to retain and reuse a cluster.
+`start()` saves admin credentials in `pgdb.json` (`0600`); application setup remains your responsibility.
+Explicit admin passwords must match saved values. Invalid setup fails without repair or deletion.
+Keep the directory out of Git. `data_dir()` cannot be combined with `fast()`.
 
 Note that `psql` does use the Postgres command line tools (`psql`, `initdb`) over a library, offering a higher range of
 compatibility across Postgres versions.

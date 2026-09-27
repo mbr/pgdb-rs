@@ -3,7 +3,7 @@
 pub mod config;
 mod db_instance;
 mod error;
-pub mod setup;
+mod setup;
 
 use std::{
     borrow::Cow,
@@ -19,7 +19,7 @@ use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
 use url::Url;
 
-use crate::setup::{ClusterSetup, Database, DatabaseOptions};
+use crate::setup::ClusterSetup;
 
 /// Default PostgreSQL port and Unix socket suffix.
 const DEFAULT_POSTGRES_PORT: u16 = 5432;
@@ -46,12 +46,8 @@ pub fn connection_port(url: &Url) -> Option<u16> {
 pub fn run_psql_command(superuser_url: &Url, database: &str, sql: &str) -> Result<(), Error> {
     // TODO: Do not use which, allow passing in.
     let psql_binary = which::which("psql").unwrap_or_else(|_| "psql".into());
-    let username = percent_decode_str(superuser_url.username())
-        .decode_utf8_lossy()
-        .into_owned();
-    let password = percent_decode_str(superuser_url.password().unwrap_or_default())
-        .decode_utf8_lossy()
-        .into_owned();
+    let username = superuser_url.username();
+    let password = superuser_url.password().unwrap_or_default();
     let host = connection_host(superuser_url).expect("URL must have a host");
     let port = connection_port(superuser_url).unwrap_or(5432);
 
@@ -154,8 +150,8 @@ pub struct Postgres {
     process: PostgresProcess,
     /// Path to the `psql` binary.
     psql_binary: path::PathBuf,
-    /// Database created during cluster setup.
-    database: Option<Database>,
+    /// Directory containing the PostgreSQL cluster.
+    data_dir: path::PathBuf,
 }
 
 /// Resources owned by a PostgreSQL process.
@@ -262,12 +258,11 @@ impl Postgres {
     #[inline]
     pub fn as_user(&self, username: &str, password: &str) -> PostgresClient<'_> {
         let mut client_url = self.superuser_url.clone();
-        // URL setters preserve percent escapes, but these credentials are raw.
         client_url
-            .set_username(&username.replace('%', "%25"))
+            .set_username(username)
             .expect("Failed to set username");
         client_url
-            .set_password(Some(&password.replace('%', "%25")))
+            .set_password(Some(password))
             .expect("Failed to set password");
         PostgresClient {
             instance: self,
@@ -275,9 +270,9 @@ impl Postgres {
         }
     }
 
-    /// Returns the database created during cluster setup, if any.
-    pub fn database(&self) -> Option<&Database> {
-        self.database.as_ref()
+    /// Returns the directory containing the PostgreSQL cluster.
+    pub fn data_dir(&self) -> &path::Path {
+        &self.data_dir
     }
 
     /// Returns the superuser URL for this instance.
@@ -290,23 +285,17 @@ impl<'a> PostgresClient<'a> {
     /// Runs a `psql` command against the database.
     ///
     /// Creates a command that runs `psql -h (host) -p (port) -U (username) -d (database)` with
-    /// `PGPASSWORD` set. Ignores `psqlrc`, disables password prompts, and stops
-    /// on SQL errors.
+    /// `PGPASSWORD` set.
     pub fn psql(&self, database: &str) -> process::Command {
         let mut cmd = process::Command::new(&self.instance.psql_binary);
 
-        let username = percent_decode_str(self.client_url.username())
-            .decode_utf8_lossy()
-            .into_owned();
-        let password = percent_decode_str(self.client_url.password().unwrap_or_default())
-            .decode_utf8_lossy()
-            .into_owned();
+        let username = self.client_url.username();
+        let password = self.client_url.password().unwrap_or_default();
 
         let host = connection_host(&self.client_url).expect("Client URL must have a host");
         let port = connection_port(&self.client_url).expect("Client URL must have a port");
 
-        cmd.args(["-X", "--no-password", "--set=ON_ERROR_STOP=1"])
-            .arg("-h")
+        cmd.arg("-h")
             .arg(host.as_ref())
             .arg("-p")
             .arg(port.to_string())
@@ -348,20 +337,6 @@ impl<'a> PostgresClient<'a> {
             return Err(Error::PsqlFailed(status));
         }
 
-        Ok(())
-    }
-
-    /// Verifies authenticated database access without printing query results.
-    fn verify_connection(&self, database: &str) -> Result<(), Error> {
-        let status = self
-            .psql(database)
-            .args(["-c", "SELECT 1"])
-            .stdout(process::Stdio::null())
-            .status()
-            .map_err(Error::RunPsql)?;
-        if !status.success() {
-            return Err(Error::PsqlFailed(status));
-        }
         Ok(())
     }
 
@@ -548,19 +523,6 @@ impl PostgresBuilder {
     /// verifies authenticated access. Temporary clusters are removed on drop;
     /// explicitly supplied data directories are preserved.
     pub fn start(&self) -> Result<Postgres, Error> {
-        self.start_inner(None)
-    }
-
-    /// Starts a cluster with an application database owned by a regular user.
-    ///
-    /// Setup is saved only after creating and verifying the database. On reuse,
-    /// unspecified options use saved credentials and conflicting options fail.
-    pub fn start_with_database(&self, database: &DatabaseOptions) -> Result<Postgres, Error> {
-        self.start_inner(Some(database))
-    }
-
-    /// Starts PostgreSQL and completes or verifies the saved cluster setup.
-    fn start_inner(&self, database: Option<&DatabaseOptions>) -> Result<Postgres, Error> {
         if self.data_dir.is_some() && self.fast {
             return Err(Error::PersistentFastMode);
         }
@@ -573,10 +535,22 @@ impl PostgresBuilder {
         let initialized = saved_setup.is_some();
         let setup = match saved_setup {
             Some(setup) => {
-                setup.validate(self.superuser_pw.as_deref(), database)?;
+                if self
+                    .superuser_pw
+                    .as_ref()
+                    .is_some_and(|password| password != &setup.superuser_pw)
+                {
+                    return Err(Error::ConflictingSuperuserPassword);
+                }
                 setup
             }
-            None => ClusterSetup::new(self.superuser_pw.as_deref(), database),
+            None => ClusterSetup {
+                superuser: "postgres".to_string(),
+                superuser_pw: self
+                    .superuser_pw
+                    .clone()
+                    .unwrap_or_else(generate_random_string),
+            },
         };
 
         let port = if self.tcp {
@@ -711,33 +685,31 @@ impl PostgresBuilder {
                 .expect("Failed to construct Unix socket URL")
         };
         superuser_url
-            .set_username(&setup.superuser.replace('%', "%25"))
+            .set_username(&setup.superuser)
             .expect("Failed to set superuser username");
         superuser_url
-            .set_password(Some(&setup.superuser_pw.replace('%', "%25")))
+            .set_password(Some(&setup.superuser_pw))
             .expect("Failed to set superuser password");
 
-        let mut pg = Postgres {
+        let pg = Postgres {
             superuser_url,
             process,
             psql_binary,
-            database: None,
+            data_dir,
         };
-        pg.as_superuser().verify_connection("postgres")?;
-        if let Some(database) = &setup.database {
-            if !initialized {
-                pg.as_superuser()
-                    .create_user(&database.user, &database.password)?;
-                pg.as_superuser()
-                    .create_database(&database.name, &database.user)?;
-            }
-            pg.as_user(&database.user, &database.password)
-                .verify_connection(&database.name)?;
+        let status = pg
+            .as_superuser()
+            .psql("postgres")
+            .args(["-Xw", "-c", "SELECT 1"])
+            .stdout(process::Stdio::null())
+            .status()
+            .map_err(Error::RunPsql)?;
+        if !status.success() {
+            return Err(Error::PsqlFailed(status));
         }
         if !initialized {
-            setup.write(&data_dir)?;
+            setup.write(pg.data_dir())?;
         }
-        pg.database = setup.database;
         Ok(pg)
     }
 }
