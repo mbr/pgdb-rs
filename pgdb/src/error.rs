@@ -9,9 +9,6 @@ use thiserror::Error;
 /// A Postgres server error.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// Persistent clusters cannot use disposable durability settings.
-    #[error("fast mode cannot be used with an explicit data directory")]
-    PersistentFastMode,
     /// Saved setup could not be read.
     #[error("could not read pgdb.json")]
     ReadSetup(#[source] io::Error),

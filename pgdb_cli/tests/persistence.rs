@@ -47,6 +47,13 @@ fn reuse_database() -> anyhow::Result<()> {
         String::from_utf8_lossy(&output.stdout).trim(),
         "owner|app|42"
     );
+    for flag in ["--fast", "--test"] {
+        assert!(pgdb(&path, &[flag, "true"]).status()?.success());
+    }
+    assert!(pgdb(&path, &["true"])
+        .env("PGDB_FAST", "true")
+        .status()?
+        .success());
     for option in ["--user", "--password", "--db", "--superuser-pw"] {
         let output = pgdb(&path, &[option, "dev", "true"]).output()?;
         assert!(!output.status.success());
@@ -68,15 +75,10 @@ fn reuse_database() -> anyhow::Result<()> {
 fn failed_setup() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("db");
-    for flag in ["--fast", "--test"] {
-        assert!(!pgdb(&path, &[flag, "true"]).status()?.success());
-    }
-    for (key, value) in [
-        ("PGDB_FAST", "true"),
-        ("PGDB_TESTS_URL", "postgres://postgres@localhost/postgres"),
-    ] {
-        assert!(!pgdb(&path, &["true"]).env(key, value).status()?.success());
-    }
+    assert!(!pgdb(&path, &["true"])
+        .env("PGDB_TESTS_URL", "postgres://postgres@localhost/postgres")
+        .status()?
+        .success());
     assert!(!path.exists());
     assert!(!pgdb(&path, &["--user", "postgres", "true"])
         .status()?

@@ -529,9 +529,6 @@ impl PostgresBuilder {
     ///
     /// Reuses saved setup when available and waits for authenticated database access.
     pub fn start(&self) -> Result<Postgres, Error> {
-        if self.data_dir.is_some() && self.fast {
-            return Err(Error::PersistentFastMode);
-        }
         let port = if self.tcp {
             self.port
                 .unwrap_or_else(|| find_unused_port().expect("failed to find an unused port"))

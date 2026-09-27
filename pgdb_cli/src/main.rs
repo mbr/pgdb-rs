@@ -40,7 +40,7 @@ struct Opts {
     #[arg(short, long)]
     port: Option<u16>,
     /// Persistent cluster directory; omitted for a disposable database.
-    #[arg(long, env = "PGDB_DATA_DIR", conflicts_with_all = ["fast", "test"])]
+    #[arg(long, env = "PGDB_DATA_DIR")]
     data_dir: Option<PathBuf>,
     /// Username for regular database user.
     #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
