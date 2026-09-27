@@ -1,5 +1,7 @@
 #![doc = include_str!("../README.md")]
 
+mod connection;
+
 use std::{
     ffi::OsString,
     os::unix::process::ExitStatusExt,
@@ -42,6 +44,14 @@ struct Opts {
     /// Persistent cluster directory; omitted for a disposable database.
     #[arg(long, env = "PGDB_DATA_DIR")]
     data_dir: Option<PathBuf>,
+    /// Run a command against an already-running cluster without managing it.
+    #[arg(
+        long,
+        value_name = "DIR",
+        requires = "command",
+        conflicts_with_all = ["data_dir", "export_tests_url", "test"]
+    )]
+    connect: Option<PathBuf>,
     /// Username for regular database user.
     #[arg(short, long, env = "PGDB_USER", default_value = "dev")]
     user: String,
@@ -101,6 +111,11 @@ impl Opts {
     }
 }
 
+/// Announces that the application database is available.
+fn announce_ready() {
+    eprintln!("PGDB_READY: PostgreSQL is ready to accept connections; database setup is complete.");
+}
+
 /// Runs an action while the configured database is available.
 fn with_database<T>(
     opts: &Opts,
@@ -109,9 +124,7 @@ fn with_database<T>(
     action: impl FnOnce(&Url, &Url, bool) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
     let action = |superuser_url: &Url, user_url: &Url, external| {
-        eprintln!(
-            "PGDB_READY: PostgreSQL is ready to accept connections; database setup is complete."
-        );
+        announce_ready();
         action(superuser_url, user_url, external)
     };
     if let Some(external_url) = external_url {
@@ -189,6 +202,7 @@ fn with_database<T>(
         }
         let superuser_url = pg.as_superuser().url("postgres");
         let user_url = pg.as_user(&opts.user, &opts.password).url(&opts.db);
+        let _connection = connection::publish(pg.data_dir(), &user_url)?;
         action(&superuser_url, &user_url, false)
     }
 }
@@ -196,7 +210,7 @@ fn with_database<T>(
 /// Runs a command with connection details for the configured database.
 fn run_command(
     opts: &Opts,
-    superuser_url: &Url,
+    superuser_url: Option<&Url>,
     user_url: &Url,
     mut signals: Signals,
 ) -> anyhow::Result<ExitStatus> {
@@ -205,22 +219,17 @@ fn run_command(
         .split_first()
         .expect("command must contain a program");
 
-    let host = pgdb::connection_host(user_url).expect("URL must have a host");
-    let port = pgdb::connection_port(user_url).unwrap_or(5432);
     let mut command = process::Command::new(program);
-    command
-        .args(arguments)
-        .env("DATABASE_URL", user_url.as_str())
-        .env("PGHOST", host.as_ref())
-        .env("PGPORT", port.to_string())
-        .env("PGUSER", &opts.user)
-        .env("PGPASSWORD", &opts.password)
-        .env("PGDATABASE", &opts.db);
+    command.args(arguments);
+    connection::configure(&mut command, user_url)?;
     if opts.no_tests_cleanup {
         command.env("PGDB_TESTS_CLEANUP", "false");
     }
     if opts.export_tests_url() {
-        command.env("PGDB_TESTS_URL", superuser_url.as_str());
+        command.env(
+            "PGDB_TESTS_URL",
+            superuser_url.context("superuser URL unavailable")?.as_str(),
+        );
     }
     let mut child = command.spawn()?;
 
@@ -254,6 +263,14 @@ fn exit_with_status(status: ExitStatus) -> ! {
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
     let mut opts = Opts::parse();
+    let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
+    if let Some(directory) = &opts.connect {
+        let url = connection::load(directory)?;
+        connection::check(&url)?;
+        announce_ready();
+        let status = run_command(&opts, None, &url, signals)?;
+        exit_with_status(status);
+    }
     let external_url = pgdb::parse_external_test_url()?;
     if opts.data_dir.is_some() && external_url.is_some() {
         anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
@@ -273,14 +290,12 @@ fn main() -> anyhow::Result<()> {
     } else {
         false
     };
-    let signals = Signals::new([SIGHUP, SIGINT, SIGTERM])?;
-
     if !opts.command.is_empty() {
         let status = with_database(
             &opts,
             initialized,
             external_url.as_ref(),
-            |superuser_url, user_url, _| run_command(&opts, superuser_url, user_url, signals),
+            |superuser_url, user_url, _| run_command(&opts, Some(superuser_url), user_url, signals),
         )?;
         exit_with_status(status);
     }
@@ -322,6 +337,15 @@ mod tests {
     use clap::Parser;
 
     use super::Opts;
+
+    /// Requires an explicit command and rejects owner-only connection options.
+    #[test]
+    fn connect_requires_command() {
+        assert!(Opts::try_parse_from(["pgdb", "--connect", ".pgdb"]).is_err());
+        assert!(Opts::try_parse_from(["pgdb", "--connect", ".pgdb", "--test", "true"]).is_err());
+        let opts = Opts::parse_from(["pgdb", "--connect", ".pgdb", "psql", "-X"]);
+        assert_eq!(opts.command, ["psql", "-X"]);
+    }
 
     #[test]
     fn test_mode_enables_fast_mode_and_url_export() {

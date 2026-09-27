@@ -411,7 +411,10 @@ dependencies = [
  "anyhow",
  "clap",
  "libc",
+ "percent-encoding",
  "pgdb",
+ "serde",
+ "serde_json",
  "signal-hook",
  "tempfile",
  "url",
@@ -664,6 +667,7 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+ "serde_derive",
 ]
 
 [[package]]

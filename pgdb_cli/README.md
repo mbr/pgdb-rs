@@ -63,6 +63,18 @@ Supply `--data-dir` (or `PGDB_DATA_DIR`) to retain a local cluster across launch
 pgdb --data-dir .pgdb psql
 ```
 
+To run another service against a cluster that `pgdb` is already running:
+
+```sh
+pgdb --connect .pgdb ./worker
+pgdb --connect .pgdb psql
+```
+
+`--connect` requires a command, exports the same connection variables as command mode, and fails
+if the database is unavailable. It never initializes or stops the database. The owner publishes
+private `connection.json` metadata and removes it on shutdown. In process-compose, wait for
+`PGDB_READY:` before launching dependent services.
+
 ## External Database Support
 
 You can use `pgdb_cli` with an existing PostgreSQL server by setting the `PGDB_TESTS_URL` environment variable:

@@ -94,6 +94,7 @@ fn failed_setup() -> anyhow::Result<()> {
     let saved = fs::read(path.join("pgdb.json"))?;
     assert!(!pgdb(&path, &["true"]).status()?.success());
     assert!(!path.join("postmaster.pid").exists());
+    assert!(!path.join("connection.json").exists());
     assert_eq!(fs::read(path.join("pgdb.json"))?, saved);
     Ok(())
 }
