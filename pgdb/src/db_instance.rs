@@ -170,6 +170,6 @@ pub fn db_fixture() -> DbInstance {
 
     // Use unified fixture creation for local databases too
     let url =
-        crate::create_fixture_db(pg.superuser_url()).expect("failed to create local fixture DB");
+        crate::create_fixture_db(&pg.superuser_url()).expect("failed to create local fixture DB");
     DbInstance::Local { _arc: pg, url }
 }
