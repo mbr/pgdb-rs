@@ -1,6 +1,6 @@
 # pgdb_cli
 
-A command-line interface for running temporary or persistent PostgreSQL databases for development and testing.
+A command-line interface for creating temporary PostgreSQL databases for development and testing.
 
 ## Installation
 
@@ -62,17 +62,6 @@ Supply `--data-dir` (or `PGDB_DATA_DIR`) to retain a local cluster across launch
 ```sh
 pgdb --data-dir .pgdb psql
 ```
-
-The server stops on exit, but the directory is preserved. After initial setup, `pgdb.json` stores
-credentials for subsequent launches. Explicit credential options must match saved values; runtime
-options such as ports are not saved. The file contains plaintext passwords with permissions `0600`:
-keep the directory private and out of Git.
-
-Missing `pgdb.json` triggers `initdb`, which refuses nonempty directories. Invalid setup or failed
-authentication causes an error, without automatic repair or deletion. Remove the directory to start
-fresh, losing its data.
-
-Cannot be combined with `--fast`, `--test`, `PGDB_FAST=true`, or `PGDB_TESTS_URL`.
 
 ## External Database Support
 

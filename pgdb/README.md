@@ -1,6 +1,6 @@
 # pgdb
 
-A small Rust library to create and run Postgres databases, typically used as ephemeral unit test fixtures or persistent development databases.
+A small Rust library to create and run ephemeral Postgres databases, typically used as unit test fixtures.
 
 ## Quick start
 
@@ -51,9 +51,6 @@ client
 ## Persistent clusters
 
 Use `Postgres::build().data_dir(".pgdb").start()` to retain and reuse a cluster.
-`start()` saves admin credentials in `pgdb.json` (`0600`); application setup remains your responsibility.
-Explicit admin passwords must match saved values. Invalid setup fails without repair or deletion.
-Keep the directory out of Git. `data_dir()` cannot be combined with `fast()`.
 
 Note that `psql` does use the Postgres command line tools (`psql`, `initdb`) over a library, offering a higher range of
 compatibility across Postgres versions.
