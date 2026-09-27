@@ -20,7 +20,7 @@ fn persistent_cluster() -> Result<(), Box<dyn Error>> {
     assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
     drop(pg);
 
-    let pg = builder.start()?;
+    let pg = builder.superuser_pw("ignored on restart").start()?;
     let output = pg
         .as_superuser()
         .psql("postgres")

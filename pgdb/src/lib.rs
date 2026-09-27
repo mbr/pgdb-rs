@@ -510,7 +510,7 @@ impl PostgresBuilder {
         self
     }
 
-    /// Sets the password for the superuser.
+    /// Sets the initial superuser password.
     #[inline]
     pub fn superuser_pw<T: Into<String>>(&mut self, superuser_pw: T) -> &mut Self {
         self.superuser_pw = Some(superuser_pw.into());
@@ -562,13 +562,6 @@ impl PostgresBuilder {
             user: None,
             database: None,
         });
-        if self
-            .superuser_pw
-            .as_ref()
-            .is_some_and(|password| password != &state.admin.password)
-        {
-            return Err(Error::ConflictingSuperuserPassword);
-        }
 
         if !initialized {
             let initdb_binary = self
