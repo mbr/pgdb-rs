@@ -52,6 +52,13 @@ fn reuse_database() -> anyhow::Result<()> {
         String::from_utf8_lossy(&output.stdout).trim(),
         "owner|app|42"
     );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .filter(|line| line.starts_with("PGDB_READY:"))
+            .count(),
+        1
+    );
     assert!(pgdb(
         &path,
         &["psql", "-Xc", "ALTER ROLE owner PASSWORD 'changed'"]
@@ -64,7 +71,9 @@ fn reuse_database() -> anyhow::Result<()> {
     ])
     .status()?
     .success());
-    assert!(!pgdb(&path, &["true"]).status()?.success());
+    let output = pgdb(&path, &["true"]).output()?;
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("PGDB_READY:"));
     assert_eq!(fs::read(path.join("pgdb.json"))?, saved);
     Ok(())
 }

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CLI emits `PGDB_READY:` on stderr after setup, with or without a child command.
 - Added persistent clusters via `--data-dir` / `PGDB_DATA_DIR` and `PostgresBuilder::data_dir()`,
   with credentials saved in `pgdb.json`.
 

@@ -108,6 +108,12 @@ fn with_database<T>(
     external_url: Option<&Url>,
     action: impl FnOnce(&Url, &Url, bool) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
+    let action = |superuser_url: &Url, user_url: &Url, external| {
+        eprintln!(
+            "PGDB_READY: PostgreSQL is ready to accept connections; database setup is complete."
+        );
+        action(superuser_url, user_url, external)
+    };
     if let Some(external_url) = external_url {
         let _tmp_dir = tempfile::TempDir::new()?;
         pgdb::create_user_and_database(external_url, &opts.db, &opts.user, &opts.password)?;
@@ -285,12 +291,6 @@ fn main() -> anyhow::Result<()> {
         initialized,
         external_url.as_ref(),
         |superuser_url, user_url, external| {
-            println!();
-            if external {
-                println!("Connected to external PostgreSQL instance.");
-            } else {
-                println!("Postgres is now running and ready to accept connections.");
-            }
             println!();
             println!(
                 "PGHOST={}",
