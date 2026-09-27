@@ -184,7 +184,7 @@ pub struct PostgresClient<'a> {
 
 /// Saved credentials for restarting a cluster.
 #[derive(Deserialize, Serialize)]
-struct ClusterSetup {
+struct AdminCredentials {
     /// Administrative role.
     superuser: String,
     /// Administrative password.
@@ -559,14 +559,14 @@ impl PostgresBuilder {
             .unwrap_or_else(|| tmp_dir.path().join("db"));
         let setup_path = data_dir.join("pgdb.json");
         let saved_setup = match fs::read(&setup_path) {
-            Ok(bytes) => {
-                Some(serde_json::from_slice::<ClusterSetup>(&bytes).map_err(Error::ParseSetup)?)
-            }
+            Ok(bytes) => Some(
+                serde_json::from_slice::<AdminCredentials>(&bytes).map_err(Error::ParseSetup)?,
+            ),
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(Error::ReadSetup(error)),
         };
         let initialized = saved_setup.is_some();
-        let setup = saved_setup.unwrap_or_else(|| ClusterSetup {
+        let setup = saved_setup.unwrap_or_else(|| AdminCredentials {
             superuser: self.superuser.clone(),
             superuser_pw: self
                 .superuser_pw
