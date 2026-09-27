@@ -16,7 +16,7 @@ fn pgdb(directory: &Path, args: &[&str]) -> Command {
     command
 }
 
-/// Checks saved credentials, command environment, and conflicting overrides.
+/// Checks that saved credentials take precedence over CLI and environment values.
 #[test]
 fn reuse_database() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
@@ -64,10 +64,17 @@ fn reuse_database() -> anyhow::Result<()> {
         .status()?
         .success());
     for option in ["--user", "--password", "--db", "--superuser-pw"] {
-        let output = pgdb(&path, &[option, "dev", "true"]).output()?;
-        assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("conflicts with pgdb.json"));
+        assert!(pgdb(&path, &[option, "dev", "true"]).status()?.success());
     }
+    assert!(pgdb(&path, &["true"])
+        .envs([
+            ("PGDB_USER", "dev"),
+            ("PGDB_PASSWORD", "dev"),
+            ("PGDB_DB", "dev"),
+            ("PGDB_SUPERUSER_PW", "dev")
+        ])
+        .status()?
+        .success());
     assert!(pgdb(
         &path,
         &["psql", "-Xc", "ALTER ROLE owner PASSWORD 'changed'"]

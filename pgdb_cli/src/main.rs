@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::Context;
-use clap::{parser::ValueSource, CommandFactory, FromArgMatches, Parser};
+use clap::Parser;
 use pgdb::state::{Credentials, State};
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
@@ -252,8 +252,7 @@ fn exit_with_status(status: ExitStatus) -> ! {
 
 /// Main entry point, read the `README.md` instead.
 fn main() -> anyhow::Result<()> {
-    let matches = Opts::command().get_matches();
-    let mut opts = Opts::from_arg_matches(&matches)?;
+    let mut opts = Opts::parse();
     if opts.data_dir.is_some() && env::var_os("PGDB_TESTS_URL").is_some() {
         anyhow::bail!("--data-dir cannot be combined with PGDB_TESTS_URL");
     }
@@ -261,19 +260,10 @@ fn main() -> anyhow::Result<()> {
         match State::load(data_dir)? {
             Some(state) => {
                 let user = state.user.context("missing user in pgdb.json")?;
-                let database = state.database.context("missing database in pgdb.json")?;
-                for (id, value, saved) in [
-                    ("db", &mut opts.db, database),
-                    ("user", &mut opts.user, user.user),
-                    ("password", &mut opts.password, user.password),
-                ] {
-                    if matches.value_source(id) != Some(ValueSource::DefaultValue)
-                        && *value != saved
-                    {
-                        anyhow::bail!("{id} conflicts with pgdb.json");
-                    }
-                    *value = saved;
-                }
+                opts.db = state.database.context("missing database in pgdb.json")?;
+                opts.user = user.user;
+                opts.password = user.password;
+                opts.superuser_pw = Some(state.admin.password);
                 true
             }
             None => false,
