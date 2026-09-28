@@ -1,5 +1,6 @@
 [workspace]
 members = ["pgdb", "pgdb_cli"]
+resolver = "3"
 
 [workspace.dependencies]
 percent-encoding = "2.3.2"
@@ -11,7 +12,7 @@ url = "2.5.8"
 [workspace.package]
 version = "0.10.0"
 authors = ["Marc Brinkmann <git@marcbrinkmann.de>"]
-edition = "2018"
+edition = "2024"
 repository = "https://github.com/mbr/pgdb-rs"
 documentation = "https://docs.rs/pgdb_cli"
 license = "MIT OR Apache-2.0"

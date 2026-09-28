@@ -21,15 +21,17 @@ fn pgdb(directory: &Path, args: &[&str]) -> Command {
 fn reuse_database() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("db");
-    assert!(pgdb(
-        &path,
-        &["psql", "-Xc", "CREATE TABLE saved AS SELECT 42 AS answer"]
-    )
-    .env("PGDB_USER", "owner")
-    .env("PGDB_PASSWORD", "secret")
-    .env("PGDB_DB", "app")
-    .status()?
-    .success());
+    assert!(
+        pgdb(
+            &path,
+            &["psql", "-Xc", "CREATE TABLE saved AS SELECT 42 AS answer"]
+        )
+        .env("PGDB_USER", "owner")
+        .env("PGDB_PASSWORD", "secret")
+        .env("PGDB_DB", "app")
+        .status()?
+        .success()
+    );
     let saved = fs::read(path.join("pgdb.json"))?;
     let output = pgdb(
         &path,
@@ -61,18 +63,20 @@ fn reuse_database() -> anyhow::Result<()> {
             .count(),
         1
     );
-    assert!(pgdb(
-        &path,
-        &["psql", "-Xc", "ALTER ROLE owner PASSWORD 'changed'"]
-    )
-    .envs([
-        ("PGDB_USER", "dev"),
-        ("PGDB_PASSWORD", "dev"),
-        ("PGDB_DB", "dev"),
-        ("PGDB_SUPERUSER_PW", "dev")
-    ])
-    .status()?
-    .success());
+    assert!(
+        pgdb(
+            &path,
+            &["psql", "-Xc", "ALTER ROLE owner PASSWORD 'changed'"]
+        )
+        .envs([
+            ("PGDB_USER", "dev"),
+            ("PGDB_PASSWORD", "dev"),
+            ("PGDB_DB", "dev"),
+            ("PGDB_SUPERUSER_PW", "dev")
+        ])
+        .status()?
+        .success()
+    );
     let output = pgdb(&path, &["true"]).output()?;
     assert!(!output.status.success());
     assert!(!String::from_utf8_lossy(&output.stderr).contains("PGDB_READY:"));
@@ -178,14 +182,18 @@ fn killed_owner_stops_postgres() -> anyhow::Result<()> {
 fn failed_setup() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("db");
-    assert!(!pgdb(&path, &["true"])
-        .env("PGDB_TESTS_URL", "postgres://postgres@localhost/postgres")
-        .status()?
-        .success());
+    assert!(
+        !pgdb(&path, &["true"])
+            .env("PGDB_TESTS_URL", "postgres://postgres@localhost/postgres")
+            .status()?
+            .success()
+    );
     assert!(!path.exists());
-    assert!(!pgdb(&path, &["--user", "postgres", "true"])
-        .status()?
-        .success());
+    assert!(
+        !pgdb(&path, &["--user", "postgres", "true"])
+            .status()?
+            .success()
+    );
     let saved = fs::read(path.join("pgdb.json"))?;
     assert!(!pgdb(&path, &["true"]).status()?.success());
     assert!(!path.join("postmaster.pid").exists());

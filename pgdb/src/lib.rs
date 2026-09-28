@@ -13,12 +13,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub use db_instance::{db_fixture, DbInstance};
+pub use db_instance::{DbInstance, db_fixture};
 pub use error::{Error, ExternalUrlError};
-use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 #[cfg(target_os = "linux")]
 use process_guard::CommandExt;
-use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
+use process_guard::{DEFAULT_FORCE_TIME, ProcessGuard, ShutdownPolicy, Signal};
 use url::Url;
 
 use crate::state::{Credentials, State};

@@ -105,8 +105,10 @@ fn connect_to_running_database() -> anyhow::Result<()> {
             .arg(&child_marker)
             .output()?;
         assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr)
-            .contains("cannot connect to the running database"));
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("cannot connect to the running database")
+        );
         assert!(!String::from_utf8_lossy(&output.stderr).contains("PGDB_READY:"));
         assert!(!child_marker.exists());
         assert_eq!(fs::read(data_dir.join("connection.json"))?, saved);

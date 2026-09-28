@@ -10,7 +10,7 @@ use std::{
 
 use url::Url;
 
-use crate::{config::PostgresEnvironment, Postgres};
+use crate::{Postgres, config::PostgresEnvironment};
 
 /// A database instance.
 ///
@@ -156,7 +156,8 @@ pub fn db_fixture() -> DbInstance {
 
     let pg = {
         let mut guard = DB.lock().expect("lock poisoned");
-        if let Some(arc) = guard.upgrade() {
+        let existing = guard.upgrade();
+        if let Some(arc) = existing {
             // We still have an instance we can reuse.
             arc
         } else {

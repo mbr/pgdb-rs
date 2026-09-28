@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased
+
+- Migrated the workspace to Rust 2024.
+
 ## [0.10.0] - 2026-09-28
 
 - On Linux, CLI-owned PostgreSQL shuts down if `pgdb` dies, including from `SIGKILL`.

@@ -2,7 +2,7 @@
 
 use std::{error::Error, fs, os::unix::fs::PermissionsExt};
 
-use pgdb::{state::State, Error as PgError, Postgres};
+use pgdb::{Error as PgError, Postgres, state::State};
 
 /// Rejects a different cluster answering on the requested TCP endpoint.
 #[test]
