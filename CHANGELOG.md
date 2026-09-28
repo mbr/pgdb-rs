@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed startup accepting an existing TCP server instead of the PostgreSQL process it launched.
 - Added `--connect DIR COMMAND` to run commands against an already-running CLI instance.
 - CLI emits `PGDB_READY:` on stderr after setup, with or without a child command.
 - Added persistent clusters via `--data-dir` / `PGDB_DATA_DIR` and `PostgresBuilder::data_dir()`,

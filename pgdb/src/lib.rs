@@ -684,15 +684,27 @@ impl PostgresBuilder {
             psql_binary,
             data_dir,
         };
-        let status = pg
+        let output = pg
             .as_superuser()
             .psql("postgres")
-            .args(["-Xw", "-c", "SELECT 1"])
-            .stdout(process::Stdio::null())
-            .status()
+            .args([
+                "-XwAt",
+                "-c",
+                "SELECT split_part(pg_read_file('postmaster.pid'), chr(10), 1)",
+            ])
+            .stderr(process::Stdio::inherit())
+            .output()
             .map_err(Error::RunPsql)?;
-        if !status.success() {
-            return Err(Error::PsqlFailed(status));
+        if !output.status.success() {
+            return Err(Error::PsqlFailed(output.status));
+        }
+        let expected_pid = pg
+            .process
+            .instance
+            .id()
+            .expect("PostgreSQL process is guarded");
+        if String::from_utf8_lossy(&output.stdout).trim() != expected_pid.to_string() {
+            return Err(Error::UnexpectedPostgres);
         }
         if !initialized {
             state.store(pg.data_dir())?;

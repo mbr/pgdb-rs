@@ -50,6 +50,9 @@ pub enum Error {
     /// Postgres was launched but did not become ready in time.
     #[error("postgres did not become ready in time")]
     StartupTimeout,
+    /// The connected server is not the PostgreSQL process launched by this instance.
+    #[error("connected PostgreSQL server is not the process launched by this instance")]
+    UnexpectedPostgres,
     /// `psql` could not be launched.
     #[error("failed to run `psql`")]
     RunPsql(io::Error),

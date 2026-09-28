@@ -78,6 +78,51 @@ fn reuse_database() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Rejects a second owner without publishing readiness or disturbing the first.
+#[test]
+fn running_cluster_is_not_adopted() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("db");
+    let output = pgdb(
+        &path,
+        &[
+            "--tcp",
+            "sh",
+            "-ec",
+            r#"
+            cp "$DIR/connection.json" "$CHECKS/connection"
+            cp "$DIR/pgdb.json" "$CHECKS/state"
+            if "$CLI" --data-dir "$DIR" --tcp --port "$PGPORT" touch "$CHECKS/child" \
+                >"$CHECKS/stdout" 2>"$CHECKS/stderr"; then
+                exit 1
+            fi
+            cmp "$DIR/connection.json" "$CHECKS/connection"
+            cmp "$DIR/pgdb.json" "$CHECKS/state"
+            psql -XAtc 'SELECT 42'
+        "#,
+        ],
+    )
+    .env("CLI", env!("CARGO_BIN_EXE_pgdb"))
+    .env("DIR", &path)
+    .env("CHECKS", directory.path())
+    .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).ends_with("42\n"));
+    let stderr = fs::read_to_string(directory.path().join("stderr"))?;
+    assert!(
+        stderr.contains("connected PostgreSQL server is not the process launched by this instance")
+    );
+    assert!(!stderr.contains("PGDB_READY:"));
+    assert!(!directory.path().join("child").exists());
+    assert!(!path.join("connection.json").exists());
+    assert!(!path.join("postmaster.pid").exists());
+    Ok(())
+}
+
 /// Checks incompatible modes and incomplete setup without deleting data.
 #[test]
 fn failed_setup() -> anyhow::Result<()> {

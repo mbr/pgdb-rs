@@ -4,6 +4,25 @@ use std::{error::Error, fs, os::unix::fs::PermissionsExt};
 
 use pgdb::{state::State, Error as PgError, Postgres};
 
+/// Rejects a different cluster answering on the requested TCP endpoint.
+#[test]
+fn occupied_tcp_endpoint_is_not_adopted() -> Result<(), Box<dyn Error>> {
+    let pg = Postgres::build().tcp().superuser_pw("shared").start()?;
+    let port = pgdb::connection_port(&pg.superuser_url()).expect("TCP port");
+    let result = Postgres::build()
+        .tcp()
+        .port(port)
+        .superuser_pw("shared")
+        .start();
+    assert!(
+        matches!(result, Err(PgError::UnexpectedPostgres)),
+        "{:?}",
+        result
+    );
+    pg.as_superuser().run_sql("postgres", "SELECT 1")?;
+    Ok(())
+}
+
 /// Checks credential reuse, data retention, and failure without repair.
 #[test]
 fn persistent_cluster() -> Result<(), Box<dyn Error>> {
