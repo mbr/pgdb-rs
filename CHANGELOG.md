@@ -1,9 +1,11 @@
 # CHANGELOG
 
-## Unreleased
+## [0.10.0] - 2026-09-28
 
 - On Linux, CLI-owned PostgreSQL shuts down if `pgdb` dies, including from `SIGKILL`.
 - Fixed startup accepting an existing TCP server instead of the PostgreSQL process it launched.
+- Updated `process_guard` to `0.5.0`, including macOS shutdown fixes.
+- `Postgres::superuser_url()` now returns an owned `Url`.
 - Added `--connect DIR COMMAND` to run commands against an already-running CLI instance.
 - CLI emits `PGDB_READY:` on stderr after setup, with or without a child command.
 - Added persistent clusters via `--data-dir` / `PGDB_DATA_DIR` and `PostgresBuilder::data_dir()`,
