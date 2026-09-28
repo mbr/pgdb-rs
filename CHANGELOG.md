@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- On Linux, CLI-owned PostgreSQL shuts down if `pgdb` dies, including from `SIGKILL`.
 - Fixed startup accepting an existing TCP server instead of the PostgreSQL process it launched.
 - Added `--connect DIR COMMAND` to run commands against an already-running CLI instance.
 - CLI emits `PGDB_READY:` on stderr after setup, with or without a child command.

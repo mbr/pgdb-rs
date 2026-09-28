@@ -16,6 +16,8 @@ use std::{
 pub use db_instance::{db_fixture, DbInstance};
 pub use error::{Error, ExternalUrlError};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
+#[cfg(target_os = "linux")]
+use process_guard::CommandExt;
 use process_guard::{ProcessGuard, ShutdownPolicy, Signal, DEFAULT_FORCE_TIME};
 use url::Url;
 
@@ -200,6 +202,9 @@ pub struct PostgresBuilder {
     host: String,
     /// Whether to use fast settings for disposable servers.
     fast: bool,
+    /// Whether to request shutdown when the spawning thread exits.
+    #[cfg(target_os = "linux")]
+    shutdown_on_parent_death: bool,
     /// Whether to connect over TCP.
     tcp: bool,
     /// Name of the superuser.
@@ -235,6 +240,8 @@ impl Postgres {
             port: None,
             host: "127.0.0.1".to_string(),
             fast: false,
+            #[cfg(target_os = "linux")]
+            shutdown_on_parent_death: false,
             tcp: false,
             superuser: "postgres".to_string(),
             superuser_pw: None,
@@ -399,6 +406,13 @@ impl PostgresBuilder {
     #[inline]
     pub fn fast(&mut self) -> &mut Self {
         self.fast = true;
+        self
+    }
+
+    /// Requests immediate shutdown when the spawning thread exits (Linux only).
+    #[cfg(target_os = "linux")]
+    pub fn shutdown_on_parent_death(&mut self) -> &mut Self {
+        self.shutdown_on_parent_death = true;
         self
     }
 
@@ -625,6 +639,10 @@ impl PostgresBuilder {
             postgres_command.arg("-c").arg("listen_addresses=");
         }
 
+        #[cfg(target_os = "linux")]
+        if self.shutdown_on_parent_death {
+            postgres_command.parent_death_signal(Signal::SIGQUIT);
+        }
         let instance = ProcessGuard::spawn_process_group(
             &mut postgres_command,
             ShutdownPolicy::Graceful {

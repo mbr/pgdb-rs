@@ -440,9 +440,9 @@ dependencies = [
 
 [[package]]
 name = "process_guard"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c5a8ed0966f2d501980da558dca84a37cbadb609b06c1060fcb5b559eae8463"
+checksum = "99777d07d90b0f46aae2c83b0d3108028689529b2aecdb042820b078f7940dcc"
 dependencies = [
  "log",
  "nix",

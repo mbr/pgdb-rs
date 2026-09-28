@@ -1,5 +1,7 @@
 //! CLI persistence and setup failures.
 
+#[cfg(target_os = "linux")]
+use std::os::unix::process::ExitStatusExt;
 use std::{env, fs, path::Path, process::Command};
 
 /// Builds a CLI invocation without inherited database settings.
@@ -120,6 +122,54 @@ fn running_cluster_is_not_adopted() -> anyhow::Result<()> {
     assert!(!directory.path().join("child").exists());
     assert!(!path.join("connection.json").exists());
     assert!(!path.join("postmaster.pid").exists());
+    Ok(())
+}
+
+/// Checks kernel-triggered shutdown and recovery after the owning CLI is killed.
+#[cfg(target_os = "linux")]
+#[test]
+fn killed_owner_stops_postgres() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("db");
+    let output = pgdb(
+        &path,
+        &[
+            "sh",
+            "-ec",
+            r#"
+            trap '
+                if test ! -f "$DIR/postmaster.pid" ||
+                    pg_ctl -D "$DIR" -m immediate -w -t 10 stop >/dev/null 2>&1; then
+                    rm -rf "$PGHOST"
+                fi
+            ' 0
+            psql -Xqc 'CREATE TABLE saved AS SELECT 42 AS answer'
+            kill -KILL "$PPID"
+            attempts=0
+            while test -f "$DIR/postmaster.pid"; do
+                attempts=$((attempts + 1))
+                test "$attempts" -lt 150
+                sleep 0.1
+            done
+            printf 'postgres stopped\n'
+        "#,
+        ],
+    )
+    .env("DIR", &path)
+    .output()?;
+    assert_eq!(output.status.signal(), Some(libc::SIGKILL));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).ends_with("postgres stopped\n"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = pgdb(&path, &["psql", "-XAtc", "SELECT answer FROM saved"]).output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
     Ok(())
 }
 

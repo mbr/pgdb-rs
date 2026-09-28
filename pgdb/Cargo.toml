@@ -13,7 +13,7 @@ readme = "README.md"
 envy = "0.4.2"
 hex_fmt = "0.3.0"
 percent-encoding = { workspace = true }
-process_guard = "0.4.0"
+process_guard = "0.5.0"
 rand = "0.10.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
