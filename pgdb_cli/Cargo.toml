@@ -14,7 +14,7 @@ anyhow = "1.0.104"
 clap = { version = "4.6.6", features = ["derive", "env"] }
 libc = "0.2.189"
 percent-encoding = { workspace = true }
-pgdb = { version = "0.10.0", path = "../pgdb" }
+pgdb = { version = "0.10.1", path = "../pgdb" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 signal-hook = "0.4.4"

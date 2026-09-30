@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## [0.10.1] - 2026-09-30
 
 - Migrated the workspace to Rust 2024.
 - Default disposable fixtures/CLI servers to fast mode; shutdown timeouts: 5s fast, 20s normal.
