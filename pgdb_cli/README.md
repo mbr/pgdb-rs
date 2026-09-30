@@ -31,15 +31,6 @@ This will:
 Pass `-t` or `--tcp` to use TCP instead. `--port` selects a TCP port and implies `--tcp`.
 The generated socket URLs work with `psql` and SQLx.
 
-Disposable local servers use fast mode by default: `fsync`, `synchronous_commit`, and
-`full_page_writes` are disabled, and shutdown uses `SIGQUIT` without a checkpoint. This applies to
-interactive mode, wrapped commands, and scripts. Set `PGDB_FAST=false` to use normal mode instead.
-Explicit `--fast` or `--test` overrides that environment setting.
-
-Servers using `--data-dir` or `PGDB_DATA_DIR` retain normal defaults. External servers and
-`--connect` are never reconfigured. The shutdown grace period defaults to five seconds in fast mode
-and twenty seconds otherwise; override it with `--shutdown-timeout` or `PGDB_SHUTDOWN_TIMEOUT`.
-
 ### Command mode
 
 Run a command with a temporary database:
