@@ -3,8 +3,7 @@
 ## Unreleased
 
 - Migrated the workspace to Rust 2024.
-- Default local `db_fixture()` and disposable CLI servers to fast mode, with shutdown timeouts of
-  5 seconds in fast mode and 20 seconds otherwise.
+- Default disposable fixtures/CLI servers to fast mode; shutdown timeouts: 5s fast, 20s normal.
 
 ## [0.10.0] - 2026-09-28
 
