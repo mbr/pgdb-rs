@@ -225,8 +225,8 @@ pub struct PostgresBuilder {
     probe_delay: Duration,
     /// Time until giving up waiting for startup.
     startup_timeout: Duration,
-    /// Time to allow graceful shutdown before forceful cleanup.
-    shutdown_timeout: Duration,
+    /// Override for the mode-dependent grace period before forceful cleanup.
+    shutdown_timeout: Option<Duration>,
     /// Time to wait for forceful cleanup to complete.
     force_shutdown_timeout: Duration,
 }
@@ -252,7 +252,7 @@ impl Postgres {
             postgres_options: Vec::new(),
             probe_delay: Duration::from_millis(100),
             startup_timeout: Duration::from_secs(10),
-            shutdown_timeout: Duration::from_secs(5),
+            shutdown_timeout: None,
             force_shutdown_timeout: DEFAULT_FORCE_TIME,
         }
     }
@@ -510,9 +510,12 @@ impl PostgresBuilder {
     }
 
     /// Sets the maximum time to wait for graceful shutdown.
+    ///
+    /// Defaults to five seconds in fast mode and twenty seconds otherwise.
+    /// An explicit timeout takes precedence regardless of builder call order.
     #[inline]
     pub fn shutdown_timeout(&mut self, shutdown_timeout: Duration) -> &mut Self {
-        self.shutdown_timeout = shutdown_timeout;
+        self.shutdown_timeout = Some(shutdown_timeout);
         self
     }
 
@@ -528,6 +531,20 @@ impl PostgresBuilder {
     pub fn superuser_pw<T: Into<String>>(&mut self, superuser_pw: T) -> &mut Self {
         self.superuser_pw = Some(superuser_pw.into());
         self
+    }
+
+    /// Resolves shutdown signals and timeouts for the configured mode.
+    fn shutdown_policy(&self) -> ShutdownPolicy {
+        let (signal, default_grace_time) = if self.fast {
+            (Signal::SIGQUIT, Duration::from_secs(5))
+        } else {
+            (Signal::SIGINT, Duration::from_secs(20))
+        };
+        ShutdownPolicy::Graceful {
+            signal,
+            grace_time: self.shutdown_timeout.unwrap_or(default_grace_time),
+            force_time: self.force_shutdown_timeout,
+        }
     }
 
     /// Starts the Postgres server.
@@ -643,19 +660,9 @@ impl PostgresBuilder {
         if self.shutdown_on_parent_death {
             postgres_command.parent_death_signal(Signal::SIGQUIT);
         }
-        let instance = ProcessGuard::spawn_process_group(
-            &mut postgres_command,
-            ShutdownPolicy::Graceful {
-                signal: if self.fast {
-                    Signal::SIGQUIT
-                } else {
-                    Signal::SIGINT
-                },
-                grace_time: self.shutdown_timeout,
-                force_time: self.force_shutdown_timeout,
-            },
-        )
-        .map_err(Error::LaunchPostgres)?;
+        let instance =
+            ProcessGuard::spawn_process_group(&mut postgres_command, self.shutdown_policy())
+                .map_err(Error::LaunchPostgres)?;
         let process = PostgresProcess { instance, tmp_dir };
 
         // Wait for the server to become ready to accept connections.
@@ -799,9 +806,47 @@ pub fn parse_external_test_url() -> Result<Option<Url>, Error> {
 mod tests {
     use std::time::Duration;
 
+    use process_guard::{DEFAULT_FORCE_TIME, ShutdownPolicy, Signal};
     use url::Url;
 
     use super::Postgres;
+
+    /// Resolves mode defaults without overwriting explicit timeout settings.
+    #[test]
+    fn shutdown_policy_respects_mode_and_explicit_timeout() {
+        for fast in [false, true] {
+            for fast_first in [false, true] {
+                for timeout in [None, Some(Duration::ZERO), Some(Duration::from_secs(7))] {
+                    let mut builder = Postgres::build();
+                    if fast && fast_first {
+                        builder.fast();
+                    }
+                    if let Some(timeout) = timeout {
+                        builder.shutdown_timeout(timeout);
+                    }
+                    if fast && !fast_first {
+                        builder.fast();
+                    }
+                    assert_eq!(
+                        builder.shutdown_policy(),
+                        ShutdownPolicy::Graceful {
+                            signal: if fast {
+                                Signal::SIGQUIT
+                            } else {
+                                Signal::SIGINT
+                            },
+                            grace_time: timeout.unwrap_or(Duration::from_secs(if fast {
+                                5
+                            } else {
+                                20
+                            })),
+                            force_time: DEFAULT_FORCE_TIME,
+                        }
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn connection_parameters_decode_socket_urls() {

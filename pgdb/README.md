@@ -11,7 +11,17 @@ let db_url = pgdb::db_fixture();
 // You can now use `db_url` in your ORM. The database will not be shut down before `db_url` is dropped.
 ```
 
-Note that databases are not cleaned up until the testing process exits.
+Local databases share a server while their fixtures overlap. Dropping the last fixture shuts down
+that server and removes its temporary directory.
+
+Local fixtures use fast mode by default: `fsync`, `synchronous_commit`, and `full_page_writes` are
+disabled, and teardown uses `SIGQUIT` without a shutdown checkpoint. Set `PGDB_FAST=false` before
+creating fixtures when testing durability or crash recovery. External servers configured through
+`PGDB_TESTS_URL` and instances created directly with `Postgres::build()` do not inherit this fast-mode
+default.
+
+The default shutdown grace period is five seconds in fast mode and twenty seconds otherwise.
+Override it with `PGDB_SHUTDOWN_TIMEOUT` (seconds) or `PostgresBuilder::shutdown_timeout()`.
 
 Local instances use isolated Unix sockets by default, avoiding TCP port allocation. Call
 `PostgresBuilder::tcp()` or configure a host or port to use TCP instead.

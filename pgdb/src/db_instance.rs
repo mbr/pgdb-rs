@@ -134,6 +134,8 @@ impl Drop for DbInstance {
 /// Otherwise, uses a shared database instance if multiple tests are running at the same time (see
 /// [`DbInstance`] for details). The database may be shut down and recreated if the last [`DbInstance`] is
 /// dropped during testing, e.g. when parallel tests are not spawned quick enough.
+/// Local servers default to [`PostgresBuilder::fast`](crate::PostgresBuilder::fast), disabling
+/// durability settings and the shutdown checkpoint. Set `PGDB_FAST=false` to opt out.
 ///
 /// This construction is necessary because `static` variables will not have `Drop` called on them,
 /// without this construction, the spawned Postgres server would not be stopped.
@@ -162,6 +164,7 @@ pub fn db_fixture() -> DbInstance {
             arc
         } else {
             let mut builder = Postgres::build();
+            builder.fast();
             environment.apply(&mut builder);
             let arc = Arc::new(builder.start().expect("failed to start global postgres DB"));
             *guard = Arc::downgrade(&arc);

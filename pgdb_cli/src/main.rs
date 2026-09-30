@@ -73,7 +73,7 @@ struct Opts {
     /// Maximum time in seconds to wait for PostgreSQL to start.
     #[arg(long, value_name = "SECONDS")]
     startup_timeout: Option<u64>,
-    /// Maximum time in seconds to wait for PostgreSQL to shut down gracefully.
+    /// Maximum shutdown grace period in seconds (default: 5 in fast mode, 20 otherwise).
     #[arg(long, value_name = "SECONDS")]
     shutdown_timeout: Option<u64>,
     /// Maximum time in seconds to wait for forceful PostgreSQL shutdown.

@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Migrated the workspace to Rust 2024.
+- Default local `db_fixture()` servers to fast mode, skipping durability writes and the shutdown
+  checkpoint. Set `PGDB_FAST=false` to opt out.
+- Allow twenty seconds for normal PostgreSQL shutdown by default, retaining five seconds for fast
+  mode. Explicit shutdown timeouts take precedence.
 
 ## [0.10.0] - 2026-09-28
 

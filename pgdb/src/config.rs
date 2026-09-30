@@ -10,8 +10,7 @@ use crate::PostgresBuilder;
 #[derive(Debug, Default, Deserialize)]
 pub struct PostgresEnvironment {
     /// Whether to use fast settings for disposable servers.
-    #[serde(default)]
-    fast: bool,
+    fast: Option<bool>,
     /// Whether to use TCP.
     #[serde(default)]
     tcp: bool,
@@ -37,8 +36,8 @@ impl PostgresEnvironment {
 
     /// Applies the configured overrides to a PostgreSQL builder.
     pub fn apply(&self, builder: &mut PostgresBuilder) {
-        if self.fast {
-            builder.fast();
+        if let Some(fast) = self.fast {
+            builder.fast = fast;
         }
         if self.tcp {
             builder.tcp();
@@ -79,6 +78,26 @@ impl PostgresEnvironment {
 #[cfg(test)]
 mod tests {
     use super::PostgresEnvironment;
+    use crate::Postgres;
+
+    /// Preserves builder defaults unless fast mode is explicitly overridden.
+    #[test]
+    fn fast_mode_overrides_are_optional() {
+        for initial in [false, true] {
+            for override_value in [None, Some(false), Some(true)] {
+                let environment = PostgresEnvironment {
+                    fast: override_value,
+                    ..PostgresEnvironment::default()
+                };
+                let mut builder = Postgres::build();
+                if initial {
+                    builder.fast();
+                }
+                environment.apply(&mut builder);
+                assert_eq!(builder.fast, override_value.unwrap_or(initial));
+            }
+        }
+    }
 
     #[test]
     fn parses_prefixed_environment() {
@@ -96,7 +115,7 @@ mod tests {
             ])
             .expect("environment must be valid");
 
-        assert!(environment.fast);
+        assert_eq!(environment.fast, Some(true));
         assert!(environment.tcp);
         assert_eq!(environment.port, Some(15432));
         assert_eq!(environment.superuser_pw.as_deref(), Some("secret"));
