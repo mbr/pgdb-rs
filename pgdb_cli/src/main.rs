@@ -144,6 +144,9 @@ fn with_database<T>(
     } else {
         let environment = pgdb::config::PostgresEnvironment::read()?;
         let mut builder = pgdb::Postgres::build();
+        if opts.data_dir.is_none() {
+            builder.fast();
+        }
         #[cfg(target_os = "linux")]
         builder.shutdown_on_parent_death();
         environment.apply(&mut builder);
